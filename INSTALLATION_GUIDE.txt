@@ -1,0 +1,230 @@
+================================================================================
+                    GUIDE D'INSTALLATION ET D'UTILISATION
+                    Bot eLearning Notifier - Université de Béjaïa
+================================================================================
+
+🎯 OBJECTIF
+-----------
+Ce bot surveille automatiquement tous les espaces d'affichage de la plateforme 
+eLearning de l'Université de Béjaïa et vous envoie des notifications Telegram 
+dès qu'un changement est détecté.
+
+📋 PRÉREQUIS
+------------
+- Python 3.8 ou plus récent
+- Chrome ou Chromium installé
+- Compte Telegram avec bot créé
+- Connexion internet stable
+
+🚀 INSTALLATION RAPIDE (Recommandée)
+------------------------------------
+
+1. Télécharger et extraire le projet
+   wget https://github.com/votre-repo/elearning-notifier-bot/archive/main.zip
+   unzip main.zip
+   cd elearning-notifier-bot-main
+
+2. Installation automatique
+   python setup.py
+
+3. Configuration
+   cp .env.example .env
+   nano .env  # Modifier avec vos identifiants
+
+4. Démarrage
+   python run_bot.py
+
+🔧 INSTALLATION MANUELLE
+------------------------
+
+1. Installer les dépendances système (Ubuntu/Debian)
+   sudo apt update
+   sudo apt install python3 python3-pip google-chrome-stable
+
+2. Installer les dépendances Python
+   pip install -r requirements.txt
+
+3. Configurer l'environnement
+   cp .env.example .env
+   nano .env
+
+4. Créer le dossier de stockage
+   mkdir local_storage
+
+5. Démarrer le bot
+   python run_bot.py
+
+⚙️ CONFIGURATION
+----------------
+
+Éditez le fichier .env avec vos identifiants :
+
+ELEARNING_USERNAME=242433047620
+ELEARNING_PASSWORD=100060196001960005
+TELEGRAM_TOKEN=8489609270:AAGVP7q0VL5RID1OeEWXNjTC1SC0xPhx5Xo
+TELEGRAM_API_ID=24358290
+TELEGRAM_API_HASH=847c2d71463d5940bc55648eb9241b51
+
+📱 CONFIGURATION TELEGRAM
+-------------------------
+
+1. Créer un bot Telegram :
+   - Ouvrir Telegram
+   - Chercher @BotFather
+   - Envoyer /newbot
+   - Suivre les instructions
+   - Copier le token reçu
+
+2. Obtenir votre Chat ID :
+   - Envoyer un message à votre bot
+   - Le bot récupérera automatiquement votre Chat ID
+
+🎮 UTILISATION
+--------------
+
+Démarrage simple :
+   python run_bot.py
+
+Démarrage en arrière-plan :
+   nohup python run_bot.py &
+
+Avec screen :
+   screen -S elearning-bot
+   python run_bot.py
+   Ctrl+A, D pour détacher
+
+🔄 SERVICE SYSTEMD (Production)
+-------------------------------
+
+1. Créer le service :
+   sudo python setup.py
+
+2. Activer le service :
+   sudo systemctl enable elearning-bot
+
+3. Démarrer le service :
+   sudo systemctl start elearning-bot
+
+4. Vérifier le statut :
+   sudo systemctl status elearning-bot
+
+5. Voir les logs :
+   sudo journalctl -u elearning-bot -f
+
+🐳 INSTALLATION DOCKER
+-----------------------
+
+1. Installer Docker et Docker Compose
+
+2. Configurer l'environnement :
+   cp docker.env.example .env
+
+3. Démarrer avec Docker :
+   docker-compose up -d
+
+4. Voir les logs :
+   docker-compose logs -f
+
+🐛 DÉPANNAGE
+------------
+
+Problème de connexion eLearning :
+   - Vérifier les identifiants dans .env
+   - Tester la connexion manuelle
+   - Vérifier votre connexion internet
+
+Problème Telegram :
+   - Vérifier le token dans .env
+   - Envoyer un message au bot
+   - Vérifier que le bot est actif
+
+Problème Chrome/Selenium :
+   - Installer Chrome : sudo apt install google-chrome-stable
+   - Ou installer Chromium : sudo apt install chromium-browser
+
+Logs et debugging :
+   tail -f bot.log
+   sudo journalctl -u elearning-bot -f
+
+📊 MONITORING
+-------------
+
+Vérifier le statut :
+   sudo systemctl status elearning-bot
+
+Voir les processus :
+   ps aux | grep python
+
+Utilisation mémoire :
+   htop
+
+Logs en temps réel :
+   tail -f bot.log
+
+🔒 SÉCURITÉ
+-----------
+
+- Ne jamais commiter le fichier .env
+- Changer régulièrement vos mots de passe
+- Utiliser des permissions restrictives : chmod 600 .env
+- Surveiller les logs régulièrement
+
+🔄 MAINTENANCE
+--------------
+
+Mise à jour :
+   sudo systemctl stop elearning-bot
+   git pull  # ou télécharger la nouvelle version
+   sudo systemctl start elearning-bot
+
+Nettoyage des logs :
+   sudo journalctl --vacuum-time=30d
+   echo "" > bot.log
+
+Sauvegarde :
+   tar -czf backup_$(date +%Y%m%d).tar.gz local_storage/
+
+📈 FONCTIONNALITÉS
+------------------
+
+Le bot surveille automatiquement :
+- 42 espaces d'affichage de l'université
+- Détecte les nouveaux fichiers, activités, ressources
+- Envoie des notifications Telegram détaillées
+- Stocke l'historique des changements
+- Fonctionne 24/7 avec redémarrage automatique
+
+Types de changements détectés :
+- ➕ Nouvelles sections/activités/ressources
+- ➖ Suppressions
+- 📁 Nouveaux fichiers
+- ✏️ Modifications de descriptions
+
+📞 SUPPORT
+----------
+
+En cas de problème :
+1. Vérifiez les logs : tail -f bot.log
+2. Testez la configuration : python setup.py
+3. Vérifiez les identifiants dans .env
+4. Testez la connexion manuelle à eLearning
+
+Ressources :
+- README.md : Documentation complète
+- GUIDE_COMPLET.md : Guide détaillé
+- bot.log : Logs d'activité
+- local_storage/ : Données sauvegardées
+
+⚠️ IMPORTANT
+------------
+Ce bot est conçu pour un usage personnel et éducatif.
+Respectez les conditions d'utilisation de la plateforme eLearning
+et n'utilisez pas ce bot de manière abusive.
+
+🎉 FÉLICITATIONS !
+-------------------
+Vous avez maintenant un bot eLearning Notifier entièrement fonctionnel
+qui vous tiendra informé de tous les changements sur la plateforme
+eLearning de l'Université de Béjaïa !
+
+================================================================================
