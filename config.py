@@ -14,6 +14,7 @@ class Config:
     TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8489609270:AAGVP7q0VL5RID1OeEWXNjTC1SC0xPhx5Xo')
     TELEGRAM_API_ID = os.getenv('TELEGRAM_API_ID', '24358290')
     TELEGRAM_API_HASH = os.getenv('TELEGRAM_API_HASH', '847c2d71463d5940bc55648eb9241b51')
+    TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')  # Optionnel: fixe directement le chat cible
     
     # Configuration Firebase
     FIREBASE_CONFIG = {
@@ -28,6 +29,21 @@ class Config:
     # Configuration du bot
     CHECK_INTERVAL_MINUTES = 15
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+
+    # Options d'organisation et de notifications
+    # Mode d'envoi du premier scan: 'grouped' ou 'separate'
+    INITIAL_SCAN_MODE = os.getenv('INITIAL_SCAN_MODE', 'separate')  # 'separate' pour envoyer chaque élément individuellement
+    # Envoyer aussi les fichiers en pièce jointe (non implémenté encore, guide fourni)
+    SEND_FILES_AS_DOCUMENTS = os.getenv('SEND_FILES_AS_DOCUMENTS', 'false').lower() == 'true'
+    # Délai (en secondes) entre messages individuels pour éviter le flood Telegram
+    MESSAGE_DELAY_SECONDS = float(os.getenv('MESSAGE_DELAY_SECONDS', '0.4'))
+    # Niveau de détail du premier inventaire: 'full' (sections + activités + ressources + fichiers) ou 'summary'
+    INITIAL_SCAN_DETAIL_LEVEL = os.getenv('INITIAL_SCAN_DETAIL_LEVEL', 'full')
+    # Envoyer un message "pas de mise à jour" quand aucun changement détecté sur un cycle
+    SEND_NO_UPDATES_MESSAGE = os.getenv('SEND_NO_UPDATES_MESSAGE', 'true').lower() == 'true'
+    # Fournisseur base de données: 'firebase' (par défaut) ou 'supabase' (futur)
+    DB_PROVIDER = os.getenv('DB_PROVIDER', 'firebase').lower()
+    COURSE_VERSIONING = os.getenv('COURSE_VERSIONING', 'true').lower() == 'true'
     
     # Espaces à surveiller
     MONITORED_SPACES = [

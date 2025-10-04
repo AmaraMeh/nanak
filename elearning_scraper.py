@@ -15,6 +15,8 @@ class ELearningScraper:
         })
         self.logger = logging.getLogger(__name__)
         self.logged_in = False
+        self.enable_file_download = Config.SEND_FILES_AS_DOCUMENTS  # réutiliser le flag
+        self.firebase_mgr = None  # sera injecté si besoin
         
     def login(self) -> bool:
         """Se connecter à la plateforme eLearning via HTTP (sans Chrome)."""
@@ -138,9 +140,11 @@ class ELearningScraper:
                         )
                         continue
 
-                self.logger.info(
-                    f"Contenu récupéré pour le cours {course_id}: {len(content['sections'])} sections"
-                )
+                # Option: télécharger les fichiers référencés
+                if self.enable_file_download and self.firebase_mgr:
+                    self._download_all_files(course_id, content)
+
+                self.logger.info(f"Contenu récupéré pour le cours {course_id}: {len(content['sections'])} sections")
                 return content
 
             except Exception as e:
@@ -257,6 +261,19 @@ class ELearningScraper:
                     file_links.append({'name': text or href.split('/')[-1], 'url': urljoin(Config.ELEARNING_URL, href)})
             activity_data['files'] = file_links
 
+            # Si c'est un dossier (folder), tenter d'extraire les fichiers internes
+            if activity_data['type'] == 'folder' and activity_data.get('url'):
+                try:
+                    internal_files = self._extract_folder_files(activity_data['url'])
+                    if internal_files:
+                        # Fusionner sans doublons (par URL)
+                        existing_urls = {f['url'] for f in activity_data['files']}
+                        for f in internal_files:
+                            if f['url'] not in existing_urls:
+                                activity_data['files'].append(f)
+                except Exception as fe:
+                    self.logger.warning(f"Extraction dossier échouée {activity_data['url']}: {fe}")
+
             return activity_data
 
         except Exception as e:
@@ -297,3 +314,42 @@ class ELearningScraper:
         """Aucune ressource à fermer pour HTTP; méthode pour compat."""
         # La session HTTP peut être réutilisée; on ne la ferme pas explicitement
         return
+
+    # ===================== Téléchargement de fichiers helper =====================
+    def _download_all_files(self, course_id: str, content: dict):
+        try:
+            if not self.firebase_mgr:
+                return
+            sections = content.get('sections', [])
+            for section in sections:
+                stitle = section.get('title','')
+                for act in section.get('activities', []):
+                    for f in act.get('files', []):
+                        self.firebase_mgr.download_file(self.session, f.get('url',''), course_id, stitle, act.get('title',''))
+                for res in section.get('resources', []):
+                    for f in res.get('files', []):
+                        self.firebase_mgr.download_file(self.session, f.get('url',''), course_id, stitle, res.get('title',''))
+        except Exception as e:
+            self.logger.warning(f"Erreur download fichiers cours {course_id}: {e}")
+
+    # ===================== Extraction fichiers dossier =====================
+    def _extract_folder_files(self, folder_url: str):
+        """Ouvrir la page d'un dossier Moodle et récupérer les liens de fichiers internes."""
+        try:
+            resp = self.session.get(folder_url, timeout=25)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, 'lxml')
+            files = []
+            for a in soup.select('a[href]'):
+                href = a.get('href','')
+                label = a.get_text(strip=True)
+                if not href:
+                    continue
+                if 'pluginfile.php' in href or any(href.lower().endswith(ext) for ext in [
+                    '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.zip', '.rar', '.txt'
+                ]):
+                    files.append({'name': label or href.split('/')[-1], 'url': urljoin(Config.ELEARNING_URL, href)})
+            return files
+        except Exception as e:
+            self.logger.warning(f"_extract_folder_files erreur {folder_url}: {e}")
+            return []

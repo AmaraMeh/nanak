@@ -6,8 +6,8 @@ Module de monitoring et de statistiques pour le bot eLearning
 import json
 import logging
 import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Any
+from datetime import datetime
+from typing import Dict, List
 import os
 
 class BotMonitor:
@@ -15,16 +15,23 @@ class BotMonitor:
         self.logger = logging.getLogger(__name__)
         self.stats_file = "bot_stats.json"
         self.stats = self._load_stats()
+        # Compteur de notifications sur le cycle (entre deux scans globaux)
+        self.cycle_notifications = self.stats.get('cycle_notifications', 0)
     
     def _load_stats(self) -> Dict:
         """Charger les statistiques depuis le fichier"""
         try:
             if os.path.exists(self.stats_file):
                 with open(self.stats_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    # Rétro‑compatibilité : ajouter champs manquants
+                    data.setdefault('courses_scanned', {})
+                    data.setdefault('errors', [])
+                    data.setdefault('cycle_notifications', 0)
+                    return data
         except Exception as e:
             self.logger.error(f"Erreur lors du chargement des statistiques: {str(e)}")
-        
+
         # Statistiques par défaut
         return {
             'start_time': time.time(),
@@ -35,21 +42,25 @@ class BotMonitor:
             'courses_scanned': {},
             'last_scan_time': None,
             'uptime_hours': 0,
-            'errors': []
+            'errors': [],
+            'cycle_notifications': 0
         }
     
     def _save_stats(self):
         """Sauvegarder les statistiques dans le fichier"""
+        # Synchroniser le compteur de cycle dans la structure persistée
+        self.stats['cycle_notifications'] = self.cycle_notifications
         try:
             with open(self.stats_file, 'w', encoding='utf-8') as f:
                 json.dump(self.stats, f, ensure_ascii=False, indent=2)
         except Exception as e:
             self.logger.error(f"Erreur lors de la sauvegarde des statistiques: {str(e)}")
-    
     def record_scan_start(self):
-        """Enregistrer le début d'un scan"""
+        """Enregistrer le début d'un scan global (tous les cours)"""
         self.stats['total_scans'] += 1
         self.stats['last_scan_time'] = time.time()
+        # Réinitialiser le compteur de notifications sur ce nouveau cycle
+        self.cycle_notifications = 0
         self._save_stats()
     
     def record_scan_result(self, course_id: str, course_name: str, success: bool, items_found: int = 0):
@@ -64,12 +75,12 @@ class BotMonitor:
                 'last_scan_time': None,
                 'last_items_count': 0
             }
-        
+
         course_stats = self.stats['courses_scanned'][course_id]
         course_stats['total_scans'] += 1
         course_stats['last_scan_time'] = time.time()
         course_stats['last_items_count'] = items_found
-        
+
         if success:
             self.stats['successful_scans'] += 1
             course_stats['successful_scans'] += 1
@@ -77,12 +88,18 @@ class BotMonitor:
         else:
             self.stats['failed_scans'] += 1
             course_stats['failed_scans'] += 1
-        
+
         self._save_stats()
+
+    def last_notifications_cycle(self) -> int:
+        """Retourne le nombre de notifications envoyées dans le cycle courant"""
+        return self.cycle_notifications
     
     def record_notification(self, course_id: str, changes_count: int):
-        """Enregistrer l'envoi d'une notification"""
+        """Enregistrer l'envoi d'une notification (et incrémenter le compteur de cycle)"""
         self.stats['total_notifications'] += 1
+        self.cycle_notifications += 1
+        # Optionnel: on pourrait conserver un historique succinct par cours ultérieurement
         self._save_stats()
     
     def record_error(self, error_type: str, error_message: str, course_id: str = None):
@@ -201,7 +218,9 @@ class BotMonitor:
             'courses_scanned': {},
             'last_scan_time': None,
             'uptime_hours': 0,
-            'errors': []
+            'errors': [],
+            'cycle_notifications': 0
         }
+        self.cycle_notifications = 0
         self._save_stats()
         self.logger.info("Statistiques réinitialisées")

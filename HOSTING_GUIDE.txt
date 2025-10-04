@@ -1,0 +1,124 @@
+# Guide d'Hébergement Gratuit (Quasi "Pour Toujours") du Bot eLearning Notifier
+
+Ce guide explique plusieurs stratégies pour héberger ce bot gratuitement ou à très faible coût, en assurant sa disponibilité continue.
+
+## 1. Pré-requis
+- Python 3.11+ (idéalement 3.12)
+- Un token Bot Telegram (via @BotFather)
+- Identifiants eLearning (USERNAME / PASSWORD)
+- (Optionnel) Firebase (sinon fallback stockage local JSON)
+- Un compte GitHub et/ou Render / Railway / Deta / Fly.io
+
+## 2. Variables .env (exemple)
+```
+ELEARNING_USERNAME=xxxxxx
+ELEARNING_PASSWORD=xxxxxx
+TELEGRAM_TOKEN=xxxxx:yyyyyyyyyyyyyyyy
+INITIAL_SCAN_MODE=separate
+MESSAGE_DELAY_SECONDS=0.4
+```
+
+## 3. Hébergement: Options
+
+### Option A: Render.com (gratuit mais "sleep" après inactivité)
+1. Créer un repo GitHub avec le code.
+2. Ajouter un fichier `render.yaml` (voir section plus bas) ou configurer via dashboard.
+3. Ajouter les variables d'environnement dans le dashboard Render.
+4. Déployer un "Background Worker".
+5. Limitations: endormissement possible + quotas CPU.
+
+### Option B: Railway.app
+1. Importer repo GitHub.
+2. Ajouter service "Python".
+3. Ajouter variables d'env.
+4. Commande de démarrage: `python run_bot.py`.
+5. Surveiller les logs pour vérifier les scans.
+
+### Option C: Deta Space (micro VM / Cron)
+- Deta convient mieux à des tâches planifiées. Ici le bot est long-running donc moins adapté.
+- Alternative: transformer le bot en fonction déclenchée périodiquement (refactor nécessaire).
+
+### Option D: Fly.io
+1. Installer flyctl.
+2. `fly launch` (sélectionner image Docker).
+3. Fournir `Dockerfile` existant.
+4. `fly secrets set TELEGRAM_TOKEN=... ELEARNING_USERNAME=...` etc.
+5. `fly deploy`.
+6. Avantage: plus stable. Limite: crédits gratuits limités.
+
+### Option E: VPS Gratuit / Crédit Étudiant
+- Oracle Free Tier, Google Free (toujours gratuit f1-micro), Microsoft Azure Crédit étudiant.
+- Installer Python + git clone + screen/tmux + script service systemd.
+
+### Option F: GitHub Actions (Scheduler)
+- Pas idéal pour un processus long (timeout 6h). Possible refactor pour exécuter un scan ponctuel toutes les X minutes via workflow cron.
+- Nécessite réécriture pour mode stateless (scanner puis sortir).
+
+## 4. Fichier Docker minimal (déjà présent)
+Assurez-vous que `requirements.txt` couvre toutes les dépendances.
+
+## 5. Exemple render.yaml
+```
+services:
+  - type: worker
+    name: elearning-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_bot.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: ELEARNING_USERNAME
+        sync: false
+      - key: ELEARNING_PASSWORD
+        sync: false
+```
+
+## 6. Superviser & Redémarrer automatiquement
+- Utiliser `while true; do python run_bot.py; sleep 5; done` dans un script shell sur plateformes instables.
+- Ajouter un watchdog interne (future amélioration possible).
+
+## 7. Optimisations pour rester gratuit
+- Réduire la fréquence: `CHECK_INTERVAL_MINUTES=30` si usage modéré.
+- Limiter le nombre d'espaces surveillés si quotas réseau.
+- Désactiver Firebase si inutile.
+
+## 8. Résilience
+- Le scraper utilise HTTP requests (léger).
+- Ajout possible: retry exponentiel, rotation User-Agent, proxy (si bloque).
+
+## 9. Logs & Debug
+- Fichier `bot.log` généré.
+- Sur hébergeur: monter un volume persistant si possible.
+
+## 10. Sécurité
+- Ne jamais commiter le token Telegram ni identifiants.
+- Utiliser variables d'environnement pour production.
+
+## 11. Mises à jour automatiques
+- Activer Dependabot (GitHub) pour requirements.
+- Déploiement auto via GitHub Action (workflow sur push main).
+
+## 12. Scénario Fly.io rapide
+```
+fly launch --copy-config --name elearning-bot
+fly secrets set TELEGRAM_TOKEN=xxx ELEARNING_USERNAME=yyy ELEARNING_PASSWORD=zzz
+fly deploy
+fly logs
+```
+
+## 13. Plan de haute disponibilité (facultatif)
+- Instance primaire + script heartbeat (non inclus).
+- Mirror sur second hébergeur (Switch manuel via variable TELEGRAM_TOKEN secondaire).
+
+## 14. Améliorations futures suggérées
+- Commande Telegram /rescan pour relancer un inventaire.
+- Pagination interactive (inline keyboard) pour naviguer les sections.
+- Cache delta plus compact (hash par activité).
+- Téléchargement et envoi auto des fichiers lourds (respecter limites Telegram ~50MB).
+
+## 15. Surveillance Externe
+- UptimeRobot ping: Exposer une petite HTTP endpoint (ajouter aiohttp) qui retourne 200.
+
+---
+Ce guide couvre les modes les plus réalistes pour un hébergement quasi gratuit. Choisir l'option B ou D pour un meilleur équilibre simplicité / stabilité.

@@ -8,6 +8,9 @@ import sys
 import os
 from main import ELearningBot
 
+# Import Config at the top level
+from config import Config
+
 def check_requirements():
     """Vérifier que tous les prérequis sont installés"""
     try:

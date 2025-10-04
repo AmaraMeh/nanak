@@ -2,6 +2,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+import difflib
 
 class ChangeDetector:
     def __init__(self):
@@ -41,6 +42,7 @@ class ChangeDetector:
         sections = content.get('sections', [])
         total_items = 0
         
+        now_iso = datetime.now().isoformat()
         for section in sections:
             section_title = section.get('title', 'Sans titre')
             
@@ -70,12 +72,14 @@ class ChangeDetector:
                     
                     # Ajouter chaque fichier dans l'activité
                     for file_info in activity.get('files', []):
+                        # Date de publication inconnue côté Moodle sans page dédiée => on stocke la date de découverte
                         changes.append({
                             'type': 'existing_file',
                             'file_name': file_info.get('name', 'Sans nom'),
                             'parent_title': activity.get('title', 'Sans titre'),
-                            'message': f'📄 Fichier existant: {file_info.get("name", "Sans nom")}',
-                            'details': f'Dans l\'activité: {activity.get("title", "Sans titre")}'
+                            'file_date': now_iso,
+                            'message': f"📄 Fichier existant: {file_info.get('name', 'Sans nom')}",
+                            'details': f"Dans l'activité: {activity.get('title', 'Sans titre')} | Publié (détecté) : {datetime.now().strftime('%d/%m/%Y %H:%M')}"
                         })
                 
                 # Ajouter chaque ressource existante
@@ -93,8 +97,9 @@ class ChangeDetector:
                             'type': 'existing_file',
                             'file_name': file_info.get('name', 'Sans nom'),
                             'parent_title': resource.get('title', 'Sans titre'),
-                            'message': f'📄 Fichier existant: {file_info.get("name", "Sans nom")}',
-                            'details': f'Dans la ressource: {resource.get("title", "Sans titre")}'
+                            'file_date': now_iso,
+                            'message': f"📄 Fichier existant: {file_info.get('name', 'Sans nom')}",
+                            'details': f"Dans la ressource: {resource.get('title', 'Sans titre')} | Publié (détecté) : {datetime.now().strftime('%d/%m/%Y %H:%M')}"
                         })
         
         # Ajouter un message de fin de scan
@@ -114,29 +119,58 @@ class ChangeDetector:
         old_sections_dict = {section['title']: section for section in old_sections}
         new_sections_dict = {section['title']: section for section in new_sections}
         
-        # Sections ajoutées
-        for title, section in new_sections_dict.items():
-            if title not in old_sections_dict:
-                changes.append({
-                    'type': 'section_added',
-                    'section_title': title,
-                    'message': f'Nouvelle section ajoutée: {title}',
-                    'details': self._get_section_summary(section)
-                })
+        # Détection des renommages potentiels via similarité
+        unmatched_old = set(old_sections_dict.keys())
+        unmatched_new = set(new_sections_dict.keys())
+        rename_pairs = []  # (old_title, new_title)
+        for old_title in list(unmatched_old):
+            best_match = None
+            best_ratio = 0.0
+            for new_title in list(unmatched_new):
+                ratio = difflib.SequenceMatcher(None, old_title, new_title).ratio()
+                if ratio > 0.6 and ratio > best_ratio:  # seuil empirique
+                    best_ratio = ratio
+                    best_match = new_title
+            if best_match and old_title != best_match:
+                rename_pairs.append((old_title, best_match, best_ratio))
+                unmatched_old.discard(old_title)
+                unmatched_new.discard(best_match)
+
+        # Sections renommées
+        for old_title, new_title, ratio in rename_pairs:
+            changes.append({
+                'type': 'section_renamed',
+                'old_title': old_title,
+                'new_title': new_title,
+                'similarity': f"{ratio:.2f}",
+                'message': f'Section renommée: {old_title} ➜ {new_title}',
+                'details': f'Similarité {ratio:.2f} | Ancien résumé: {self._get_section_summary(old_sections_dict[old_title])} | Nouveau résumé: {self._get_section_summary(new_sections_dict[new_title])}'
+            })
+
+        # Sections ajoutées (non mappées)
+        for title in unmatched_new:
+            section = new_sections_dict[title]
+            changes.append({
+                'type': 'section_added',
+                'section_title': title,
+                'message': f'Nouvelle section ajoutée: {title}',
+                'details': self._get_section_summary(section)
+            })
         
-        # Sections supprimées
-        for title, section in old_sections_dict.items():
-            if title not in new_sections_dict:
-                changes.append({
-                    'type': 'section_removed',
-                    'section_title': title,
-                    'message': f'Section supprimée: {title}',
-                    'details': self._get_section_summary(section)
-                })
+        # Sections supprimées (non mappées)
+        for title in unmatched_old:
+            section = old_sections_dict[title]
+            changes.append({
+                'type': 'section_removed',
+                'section_title': title,
+                'message': f'Section supprimée: {title}',
+                'details': self._get_section_summary(section)
+            })
         
-        # Sections modifiées
+        # Sections modifiées (ignorer celles qui sont renommées -> prendre le nouveau titre uniquement)
+        processed_titles = {new for _, new, _ in rename_pairs}
         for title, new_section in new_sections_dict.items():
-            if title in old_sections_dict:
+            if title in old_sections_dict and title not in processed_titles:
                 old_section = old_sections_dict[title]
                 section_changes = self._compare_section_content(old_section, new_section)
                 changes.extend(section_changes)
@@ -283,14 +317,16 @@ class ChangeDetector:
         new_files_dict = {file['name']: file for file in new_files}
         
         # Fichiers ajoutés
+        from datetime import datetime
         for name, file in new_files_dict.items():
             if name not in old_files_dict:
                 changes.append({
                     'type': 'file_added',
                     'file_name': name,
                     'parent_title': parent_title,
+                    'file_date': datetime.now().isoformat(),
                     'message': f'Nouveau fichier ajouté: {name}',
-                    'details': f'Dans: {parent_title}\nURL: {file.get("url", "N/A")}'
+                    'details': f"Dans: {parent_title}\nURL: {file.get('url', 'N/A')}\nPublié (détecté) : {datetime.now().strftime('%d/%m/%Y %H:%M')}"
                 })
         
         # Fichiers supprimés

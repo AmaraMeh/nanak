@@ -1,0 +1,92 @@
+# Guide des Commandes & Inventaire eLearning (Version Étendue)
+
+Ce bot offre une interface riche pour analyser, inventorier et suivre les espaces d'affichage eLearning.
+
+## 1. Commandes Principales
+/start — Affiche l'aide.
+/help — Liste complète des commandes.
+/status — État global du bot (running, intervalle, snapshot mémoire).
+/list — Liste des identifiants des cours surveillés.
+/course <id> — Statistiques d'un cours (sections, activités, ressources, fichiers).
+/sections <id> — Liste des sections du cours.
+/activities <id> — Liste des activités (tous types) du cours.
+/resources <id> — Liste des ressources du cours.
+/files <id> — Liste des fichiers détectés (noms parents inclus).
+/inventory <id> — Inventaire hiérarchique condensé (sections -> activités / ressources -> fichiers).
+/nav <id> — Navigation textuelle condensée.
+/inline <id> — Navigation paginée interactive (10 éléments/page).
+/search <mot> — Recherche titres (sections, activités, ressources).
+/export <id> — Export JSON tronqué (<4096 chars).
+/courses_count — Nombre total de cours surveillés.
+/uptime — Indicateurs de fonctionnement.
+/ping — Latence simple.
+/config — Paramètres dynamiques courants.
+/setmode grouped|separate — Change le mode de construction initial interne (affichage différé maintenant).
+/delay <float> — Ajuste le délai anti-flood (0.1–5.0s).
+/versions — Versions Python & librairies clés.
+/about — À propos.
+/rescan — Scan global immédiat.
+/rescan_course <id> — Scan ciblé d'un seul cours.
+/today — Nouveautés (ajouts) d'aujourd'hui.
+/yesterday — Nouveautés d'hier.
+/last7 — Nouveautés sur les 7 derniers jours.
+/files_send <id> — Envoi manuel des fichiers téléchargés.
+/stopbot — Arrêt du bot (pas encore protégé par auth).
+
+## 2. Inventaire Initial (NOUVEAU COMPORTEMENT)
+- Le premier scan NE diffuse plus chaque élément séparément.
+- Pour chaque cours: collecte complète puis envoi d'un BLOC UNIQUE structuré (sections > activités / ressources > fichiers).
+- L'ordre d'envoi suit la liste Config.MONITORED_SPACES (respect de l'ordre des départements/espaces).
+- Format: titre section, puis activités (type, description), ressources, fichiers (avec parent).
+
+## 3. Téléchargement et Envoi de Fichiers
+- Activation contrôlée par SEND_FILES_AS_DOCUMENTS dans config.
+- Pendant le scan: les liens de fichiers (pluginfile.php, extensions usuelles) sont détectés.
+- Dossiers (type folder): le bot ouvre la page et extrait les fichiers internes.
+- Nom local: dossier downloads/<course>/<section>/<parent>_hash_nomOriginal.
+- Taille > 50MB ignorée.
+- Envoi Telegram manuel via /files_send <id> (envois séquentiels, 0.8s pause).
+
+## 4. Navigation Inline
+Commande: /inline <id>
+- Pagination 10 éléments/page.
+- Boutons ⬅️ ➡️.
+- Statique pour l'instant (pas de rafraîchissement dynamique après nouveaux scans).
+
+## 5. Modes d'Inventaire Initial (legacy)
+- grouped / separate existent encore pour compat, mais le mode effectif final est maintenant "deferred one-shot".
+- /setmode modifie juste la logique interne si réactivation future du streaming.
+
+## 6. Recherche
+/search terme — Insensible à la casse. Limite interne pour éviter surcharge (≤200 résultats).
+
+## 7. Export JSON
+/export <id> — JSON tronqué (≈3800 chars max). Pour export complet: future option /export_file (non implémentée).
+
+## 8. Historique & Nouveautés
+- /today /yesterday /last7 exploitent les logs de changements (ajouts) sauvegardés localement (ou Firestore si disponible).
+- Filtrage par date sur les entrées log (activité/ressource/fichier ajoutés).
+
+## 9. Limitations Actuelles
+- Pas d'authentification des utilisateurs (toute personne qui parle au bot contrôle).
+- /stopbot non protégé.
+- Pas de suppression automatique des vieux fichiers téléchargés.
+- Pas encore de ZIP global /download_all.
+
+## 10. Sécurité & Bonnes Pratiques
+- Ne pas exposer le bot publiquement sans filtrage (whitelist d'IDs recommandée).
+- Régénérer le token Telegram si fuite.
+- Sur environnement gratuit, surveiller l'espace disque (downloads/).
+
+## 11. Roadmap Potentielle
+- Auth admin (liste blanche).
+- /download_zip <id> pour archive compressée.
+- Filtres inline (montrer seulement fichiers / activités).
+- Cache multi-sessions pour redémarrages.
+- Diff incrémental compressé pour grands cours (>1000 éléments).
+
+## 12. Support
+Ouvrir une issue ou décrire la fonctionnalité souhaitée clairement (objectif + exemple concret).
+
+---
+Fin du guide étendu. Bonne surveillance!

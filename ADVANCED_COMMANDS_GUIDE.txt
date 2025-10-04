@@ -1,0 +1,23 @@
+# Guide Avancé des Commandes (+100)
+
+Ce document répertorie les alias dynamiques générés pour chaque département (cours surveillé).
+
+Syntaxe des alias par ID de cours (ID = identifiant numérique dans Config.MONITORED_SPACES) :
+
+/d<ID>    -> Snapshot rapide du cours (équivalent /course <ID>)
+/dt<ID>   -> Nouveautés d'aujourd'hui pour ce cours (ajouts post premier scan)
+/dy<ID>   -> Nouveautés d'hier pour ce cours
+/d7<ID>   -> Nouveautés des 7 derniers jours pour ce cours
+
+Exemple :
+- /d19984  affiche le snapshot du cours 19984
+- /dt19984 nouveautés du jour pour 19984
+- /dy19984 nouveautés d'hier pour 19984
+- /d719984  (typo) -> ignoré
+
+Les commandes sont générées dynamiquement à chaque démarrage.
+
+## Liste des alias générés
+
+(Tronquée si > 4000 caractères dans l'affichage Telegram ; utiliser pagination future si demandé.)
+

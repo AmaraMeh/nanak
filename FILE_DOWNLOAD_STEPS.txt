@@ -1,0 +1,94 @@
+# Téléchargement & Envoi des Fichiers des Départements
+
+Ce fichier décrit comment étendre le bot pour télécharger les fichiers trouvés dans chaque activité / ressource et (optionnellement) les envoyer sur Telegram.
+
+⚠️ Attention: Envoyer beaucoup de documents peut:
+- Déclencher le flood control Telegram.
+- Consommer beaucoup de bande passante.
+- Rendre le premier scan très long.
+
+## 1. Où sont listés les fichiers ?
+Dans `elearning_scraper.py`, méthode `_extract_activity_data`:
+- Chaque activité ajoute `files: [{name, url}, ...]` si `pluginfile.php` ou extension (.pdf, .docx, etc.).
+
+## 2. Stratégie de Téléchargement
+Ajouter une classe utilitaire `FileDownloader`:
+```
+class FileDownloader:
+    def __init__(self, session):
+        self.session = session
+    def download(self, url, dest_folder):
+        r = self.session.get(url, timeout=30)
+        r.raise_for_status()
+        os.makedirs(dest_folder, exist_ok=True)
+        filename = url.split('/')[-1].split('?')[0]
+        path = os.path.join(dest_folder, filename)
+        with open(path, 'wb') as f:
+            f.write(r.content)
+        return path
+```
+
+## 3. Envoi Telegram des documents
+Avec python-telegram-bot synchrone (ici usage direct Bot), on peut:
+```
+await self.bot.send_document(chat_id=self.chat_id, document=open(path, 'rb'), filename=custom_name)
+```
+Limiter par:
+- Taille < 49MB
+- Nombre par minute (ex: max 15)
+
+## 4. Intégration Suggestion
+- Dans `_send_separate_initial_scan`, après détection d'un `existing_file`, si `Config.SEND_FILES_AS_DOCUMENTS` est True:
+  - Télécharger le fichier dans `downloads/<course_id>/<section>/`
+  - L'envoyer.
+  - Attendre 1s.
+
+## 5. Nom de Fichier Amélioré
+Construire: `{course_short}_{section_index}_{sanitized_title}_{original}`
+Utiliser regex pour retirer espaces / caractères spéciaux.
+
+## 6. Prévention des doublons
+- Maintenir un hash (SHA1) du contenu fichier.
+- Stocker dans `downloads/index.json` un mapping hash -> path.
+- Si déjà présent, ne pas renvoyer (ou ajouter note "(déjà envoyé)").
+
+## 7. Gestion des Erreurs
+- Timeout -> retry 2 fois.
+- 404 -> log et skip.
+- Trop de requêtes -> pause progressive.
+
+## 8. Nettoyage / Rétention
+- Garder uniquement 7 derniers jours (`mtime` check) ou taille max dossier (ex: 500MB).
+
+## 9. Sécurité
+- Ne jamais exécuter le contenu.
+- Filtrer extensions suspectes (.exe, .sh) si non désiré.
+
+## 10. Option: Archive ZIP
+- Après un scan, compresser les fichiers collectés dans un ZIP par cours et envoyer 1 archive.
+```
+import zipfile, io
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+    for root, _, files in os.walk(course_folder):
+        for f in files:
+            full = os.path.join(root, f)
+            rel = os.path.relpath(full, course_folder)
+            z.write(full, rel)
+buf.seek(0)
+await bot.send_document(chat_id=chat_id, document=buf, filename=f"{course_id}.zip")
+```
+
+## 11. Limiter la Charge Serveur
+- Intervalle fixe entre téléchargements (0.5 - 1s).
+- User-Agent constant déjà défini.
+
+## 12. Étapes Résumées d'Implémentation Future
+1. Créer `file_downloader.py`.
+2. Ajouter flag config `SEND_FILES_AS_DOCUMENTS` (déjà ajouté dans config).
+3. Étendre `TelegramNotifier._send_separate_initial_scan` pour télécharger/envoi conditionnel.
+4. Ajouter logs.
+5. Ajouter protections taille / doublons.
+
+---
+Ce guide fournit la feuille de route pour activer l'envoi des fichiers. Tu peux me demander de l'implémenter maintenant si tu es prêt.

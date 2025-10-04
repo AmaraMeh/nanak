@@ -1,0 +1,60 @@
+Liste de 55 idées d'améliorations et d'évolutions futures pour le bot eLearning
+==========================================================================
+
+1. Ajouter un endpoint HTTP /health pour vérifier que le bot tourne.
+2. Implémenter un mode silence nocturne (pas de notifications entre 22h et 7h).
+3. Ajouter une commande /stats détaillée avec graphiques ASCII.
+4. Export complet en JSON compressé (/export_full).
+5. Ajout d'un cache en mémoire pour réduire les hits répétés sur les mêmes pages.
+6. Implémenter la détection des modifications de description de ressource.
+7. Ajouter un mode "digest" journalier (récap quotidien à une heure fixe).
+8. Commande /week pour un résumé de la semaine.
+9. Support multi-chat: liste blanche des chat IDs autorisés.
+10. Système de rôles (admin / viewer) pour restreindre certaines commandes.
+11. Intégration Supabase (en alternative complète à Firebase) avec historique SQL.
+12. Ajout d'une purge automatique des anciens logs (>30 jours).
+13. Compression ZIP des fichiers téléchargés par cours (/zip <id>).
+14. Génération d'un rapport PDF hebdomadaire (WeasyPrint / ReportLab).
+15. Ajout d'alertes si un cours n'a plus de nouvelles depuis X jours.
+16. Détection des renommages de section (hash titres anciens + nouveaux).
+17. Ajout de métriques Prometheus (exporter /metrics).
+18. Système de tags sur les activités pour filtrage avancé.
+19. Stocker un hash du HTML original pour détecter les variations subtiles.
+20. Implémenter un scheduler adaptatif (scan plus fréquent aux heures de bureau).
+21. Ajouter un paramètre de parallélisation pour scanner plusieurs cours simultanément.
+22. Mode "dry-run" pour tester sans envoyer de notifications.
+23. Ajout d'une commande /errors pour afficher les dernières erreurs.
+24. Ajout d'une commande /reset_course <id> pour oublier un cours et re-scaner.
+25. Détection des changements dans l'ordre des sections.
+26. Support de WebSockets si la plateforme évolue (observer push events).
+27. Sécurité: signature des messages importants avec un hash.
+28. Chiffrement optionnel des snapshots locaux (Fernet / cryptography).
+29. Ajout d'un watcher sur l'espace disque restant.
+30. Intégration d'un mode maintenance (/maintenance on/off).
+31. Commande /versions détaillant aussi les versions des libs Firebase & Telegram.
+32. Ajout d'un test unitaire pour chaque type de changement détecté.
+33. Simulation de modifications pour démonstration (/simulate <type>).
+34. Ajout d'une interface Web minimaliste (FastAPI) pour monitoring.
+35. Ajout d'une file interne (queue asyncio) pour lisser l'envoi des messages.
+36. Détection des changements de liens (URL modifiée sans titre changé).
+37. Mode de notification par résumé (titre + compteur, détails sur demande).
+38. Ajout d'un throttle si trop de changements en peu de temps.
+39. Envoi optionnel d'un emoji aléatoire pour humaniser les messages.
+40. Ajout d'un hash de contenu des fichiers (si taille <5MB) pour vérifier l'intégrité.
+41. Ajout d'une commande /files_new <id> pour lister uniquement les nouveaux fichiers récents.
+42. Déplacement des secrets vers un gestionnaire comme Vault (optionnel).
+43. Ajout d'une commande /config_set <clé> <valeur> pour changer dynamiquement.
+44. Ajout d'une commande /scan_now pour bypass le cooldown si >5 minutes écoulées.
+45. Support multi-instance avec un identifiant d'instance dans les messages.
+46. Ajout d'un heartbeat écrit dans un fichier pour supervision externe.
+47. Ajout d'une commande /uptime détaillée (jours, heures, minutes).
+48. Génération d'un CHANGELOG automatique à partir des logs de changements.
+49. Ajout d'un mode "light" (ne surveille que X cours configurés dynamiquement).
+50. Support d'un filtre regex dans /search_regex.
+51. Détection et notification des suppressions de fichiers (actuellement partiel).
+52. Ajout d'une alerte si un scan global échoue > N fois consécutivement.
+53. Implémenter une table de mapping IDs -> noms abrégés pour les commandes dynamiques.
+54. Utiliser un pool de sessions HTTP réutilisables multi-thread pour accélérer.
+55. Ajout d'une commande /departements_modes pour basculer l'affichage des boutons (today / yesterday / last7).
+
+Fin de liste.
