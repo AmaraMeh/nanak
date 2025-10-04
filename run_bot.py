@@ -12,7 +12,6 @@ def check_requirements():
     """Vérifier que tous les prérequis sont installés"""
     try:
         import requests
-        import selenium
         import telegram
         import firebase_admin
         import schedule
@@ -42,6 +41,8 @@ def check_config():
 
 async def main():
     """Fonction principale"""
+    from config import Config
+    
     print("🤖 Démarrage du Bot eLearning Notifier")
     print("=" * 50)
     
