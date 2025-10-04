@@ -1,0 +1,84 @@
+Elearning Monitor Bot – Guide complet (installation, exécution, hébergement)
+
+1. Vue d'ensemble
+- Le bot se connecte à https://elearning.univ-bejaia.dz, lit les contenus des espaces, détecte les changements (ajouts, suppressions, modifications) et envoie un message Telegram en DM.
+- Stockage: Firebase Firestore (Admin SDK). Notifications: Telegram Bot API. Scraping: Playwright.
+
+2. Pré-requis
+- Node.js 20+
+- Créer un bot Telegram (via @BotFather) et récupérer le token
+- Récupérer votre chat ID (via @userinfobot ou auto-détection en DM au bot)
+- Projet Firebase avec Firestore activé + compte de service (JSON)
+
+3. Configuration de Firebase (service account)
+- Console Firebase > Paramètres du projet > Comptes de service > Générer une nouvelle clé privée
+- Téléchargez le fichier JSON en local
+- Dans `.env`, renseignez soit:
+  - GOOGLE_APPLICATION_CREDENTIALS=/chemin/absolu/vers/service-account.json
+  - OU FIREBASE_SERVICE_ACCOUNT_JSON={...json...}
+
+4. Configuration Telegram
+- Dans `.env`, définissez TELEGRAM_BOT_TOKEN=...
+- Optionnel: TELEGRAM_CHAT_ID=... (si inconnu, envoyez /start à votre bot et relancez. Le bot essaiera de l'auto-détecter et le stockera dans Firestore.)
+
+5. Variables d'environnement importantes (.env)
+- ELEARNING_BASE_URL=https://elearning.univ-bejaia.dz
+- ELEARNING_USERNAME=VOTRE_LOGIN
+- ELEARNING_PASSWORD=VOTRE_MOTDEPASSE
+- TELEGRAM_BOT_TOKEN=aaaa:bbbb
+- TELEGRAM_CHAT_ID=123456789 (optionnel)
+- GOOGLE_APPLICATION_CREDENTIALS=/abs/path/service-account.json (ou FIREBASE_SERVICE_ACCOUNT_JSON={...})
+- CRON_SCHEDULE=*/15 * * * *
+- PLAYWRIGHT_HEADLESS=true
+- SCRAPE_CONCURRENCY=3
+- STORAGE_STATE_PATH=./data/storage-state.json
+- FIRESTORE_COLLECTION=elearning_courses
+- FIRESTORE_SETTINGS_COLLECTION=settings
+
+6. Installation locale
+- npm install
+- npx playwright install chromium
+- cp .env.example .env puis éditez .env
+
+7. Lancement
+- npm run build
+- npm start
+- Le bot s'exécute immédiatement puis toutes les 15 minutes
+
+8. Gestion de la liste des espaces
+- Éditez `src/courses.ts` (tableau COURSES). Redémarrez le bot.
+
+9. Hébergement
+A) Docker (recommandé)
+- Construire: `docker build -t elearning-monitor .`
+- Exécuter:
+  docker run -d \
+    --name elearning-monitor \
+    --restart unless-stopped \
+    --env-file /chemin/vers/.env \
+    -v /chemin/host/data:/app/data \
+    elearning-monitor
+
+B) PM2 (serveur VM)
+- npm i -g pm2
+- pm2 start dist/index.js --name elearning-monitor
+- pm2 save && pm2 startup
+
+C) Cron système (alternative)
+- Créez un script shell qui exécute `node dist/index.js`
+- Planifiez via `crontab -e` si vous préférez (mais le projet embarque déjà un cron interne)
+
+10. Dépannage
+- Erreur de login: vérifiez les identifiants, désactivez headless (`PLAYWRIGHT_HEADLESS=false`) pour voir le navigateur.
+- Pas de DM: assurez-vous que vous avez écrit au bot, vérifiez TELEGRAM_BOT_TOKEN et éventuellement TELEGRAM_CHAT_ID.
+- Firestore: assurez-vous que le service account a les droits nécessaires.
+
+11. Sécurité
+- Ne commitez jamais .env ni vos clés.
+- Limitez l'accès au JSON du service account.
+- Les mots de passe ne sont jamais affichés dans les logs.
+
+12. Mise à jour
+- Pour mettre à jour la liste, les paramètres, ou le code: modifiez, reconstruisez, redémarrez.
+
+Bon monitoring !
