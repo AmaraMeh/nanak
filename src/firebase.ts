@@ -2,7 +2,7 @@ import admin from "firebase-admin";
 import fs from "node:fs";
 import { appConfig } from "./config.js";
 
-function initializeFirebaseAdmin(): admin.app.App {
+function initializeFirebaseAdmin(): admin.app.App | null {
   if (admin.apps.length) {
     return admin.app();
   }
@@ -19,9 +19,8 @@ function initializeFirebaseAdmin(): admin.app.App {
     }
     credential = admin.credential.cert(p);
   } else {
-    throw new Error(
-      "Firebase Admin requires service account. Set GOOGLE_APPLICATION_CREDENTIALS or FIREBASE_SERVICE_ACCOUNT_JSON"
-    );
+    // No Firebase configured; allow fallback to filesystem
+    return null;
   }
 
   return admin.initializeApp({
@@ -30,4 +29,6 @@ function initializeFirebaseAdmin(): admin.app.App {
 }
 
 export const firebaseApp = initializeFirebaseAdmin();
-export const firestore = admin.firestore(firebaseApp);
+export const firestore: FirebaseFirestore.Firestore | null = firebaseApp
+  ? admin.firestore(firebaseApp)
+  : null;

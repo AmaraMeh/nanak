@@ -28,6 +28,7 @@ Elearning Monitor Bot – Guide complet (installation, exécution, hébergement)
 - TELEGRAM_BOT_TOKEN=aaaa:bbbb
 - TELEGRAM_CHAT_ID=123456789 (optionnel)
 - GOOGLE_APPLICATION_CREDENTIALS=/abs/path/service-account.json (ou FIREBASE_SERVICE_ACCOUNT_JSON={...})
+  - Si vous ne configurez pas Firebase, le bot utilisera un stockage local dans `data/` (snapshots.json, settings.json)
 - CRON_SCHEDULE=*/15 * * * *
 - PLAYWRIGHT_HEADLESS=true
 - SCRAPE_CONCURRENCY=3

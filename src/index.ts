@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { runMonitorOnce } from "./monitor.js";
 import { appConfig } from "./config.js";
+import { ensureTelegramChatId, sendTelegramMessage } from "./telegram.js";
 
 async function main(): Promise<void> {
   console.log(`[BOT] Elearning monitor starting. Schedule: ${appConfig.CRON_SCHEDULE}`);
@@ -8,6 +9,11 @@ async function main(): Promise<void> {
   // Run immediately at startup
   try {
     await runMonitorOnce();
+    // Send a quick startup DM
+    try {
+      const chatId = await ensureTelegramChatId();
+      await sendTelegramMessage(chatId, `<b>Bot démarré</b>\nSurveillance active toutes les 15 minutes.`);
+    } catch {}
     console.log("[BOT] Initial run completed.");
   } catch (err) {
     console.error("[BOT] Initial run error:", (err as Error).message);

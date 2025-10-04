@@ -1,16 +1,16 @@
 ### Elearning Monitor Bot (Moodle) – Bejaia
 
-Un bot Node.js qui se connecte à `elearning.univ-bejaia.dz`, surveille une liste d'espaces d'affichage, stocke des instantanés dans Firebase (Firestore) et vous envoie des notifications Telegram en DM à chaque changement.
+Un bot Node.js qui se connecte à `elearning.univ-bejaia.dz`, surveille une liste d'espaces d'affichage, stocke des instantanés (Firestore ou fichiers) et vous envoie des notifications Telegram en DM à chaque changement.
 
 - **Scraping sécurisé**: Playwright (Chromium headless)
-- **Stockage**: Firebase Firestore via Admin SDK (service account)
+- **Stockage**: Firebase Firestore via Admin SDK (service account) ou fallback fichier local (`data/`)
 - **Notifications**: Telegram Bot API (DM)
 - **Automatisation**: cron intégré (toutes les 15 minutes par défaut)
 
 ### 1) Prérequis
 - Node.js 20+
 - Un bot Telegram (via @BotFather) et votre chat ID
-- Un projet Firebase avec un compte de service (JSON) et Firestore activé
+- Optionnel: un projet Firebase avec un compte de service (JSON) et Firestore activé (sinon stockage local)
 
 ### 2) Installation
 ```bash
@@ -29,7 +29,7 @@ Variables indispensables dans `.env`:
 - `ELEARNING_USERNAME` / `ELEARNING_PASSWORD` (vos identifiants Moodle)
 - `TELEGRAM_BOT_TOKEN` (token du bot Telegram)
 - `TELEGRAM_CHAT_ID` (votre chat ID, optionnel si vous laissez l'auto-détection)
-- `GOOGLE_APPLICATION_CREDENTIALS` (chemin vers le JSON du service account) ou `FIREBASE_SERVICE_ACCOUNT_JSON` (le JSON inline)
+- `GOOGLE_APPLICATION_CREDENTIALS` (chemin vers le JSON du service account) ou `FIREBASE_SERVICE_ACCOUNT_JSON` (le JSON inline). Si vous n'avez pas Firebase, laissez ces variables vides: le stockage local (`data/`) sera utilisé.
 
 ### 3) Lancer
 ```bash
