@@ -4,7 +4,7 @@ python-telegram-bot==20.7
 firebase-admin==6.4.0
 python-dotenv==1.0.0
 schedule==1.2.0
-lxml==4.9.3
+lxml==5.2.2
 cryptography==41.0.7
 pytz==2023.3
 fastapi==0.110.0

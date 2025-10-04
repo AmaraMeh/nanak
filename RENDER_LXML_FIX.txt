@@ -1,0 +1,20 @@
+Problème: lxml 4.9.3 ne fournit pas de roue (wheel) précompilée pour Python 3.13 sur l'environnement Render Free. La compilation échoue faute de compatibilité avec changements internes Python 3.13.
+
+Solution appliquée:
+- Mise à jour de lxml vers 5.2.2 dans requirements.txt (version disposant de wheels pour Python récents / corrections compat).
+
+Étapes si le problème persiste:
+1. Forcer une version Python supportée par wheels existants (ex: PYTHON_VERSION=3.12 dans Render via environment si supporté par plan).
+2. OU ajouter dépendances système (si build forcé):
+   apt-get update && apt-get install -y libxml2-dev libxslt1-dev zlib1g-dev gcc
+   (Nécessite service Docker personnalisé ou build command multi-ligne).
+3. Vérifier pip >= 23 : pip install --upgrade pip
+4. En dernier recours remplacer lxml par html5lib + selectolax/beautifulsoup4 si fonctionnalités XML avancées non utilisées.
+
+Dépannage rapide:
+- Exécuter local: python -c "import lxml, sys; print(lxml.__version__, sys.version)".
+- Vérifier que version affichée = 5.2.2.
+
+Notes:
+- Le code actuel n'utilise pas d'API avancées d'lxml (principalement parser HTML). bs4 + parser 'lxml' reste supporté avec la mise à jour.
+- Aucune modification du code source nécessaire.
