@@ -30,7 +30,7 @@ if [ ! -f ".env" ]; then
 fi
 
 # Vérifier si les dépendances sont installées
-if ! python3 -c "import requests, selenium, telegram, firebase_admin, schedule" 2>/dev/null; then
+if ! python3 -c "import requests, telegram, firebase_admin, schedule, bs4" 2>/dev/null; then
     echo "📦 Installation des dépendances..."
     pip3 install -r requirements.txt
     if [ $? -ne 0 ]; then

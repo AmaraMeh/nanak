@@ -59,10 +59,10 @@ def test_configuration():
         
         # Test des imports
         import requests
-        import selenium
         import telegram
         import firebase_admin
         import schedule
+        import bs4
         print("✅ Tous les modules importés avec succès")
         
         return True

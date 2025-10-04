@@ -1,7 +1,9 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
+import os
 import json
 import logging
+import firebase_admin
+from firebase_admin import credentials, firestore
+from google.auth.exceptions import DefaultCredentialsError
 from config import Config
 
 class FirebaseManager:
@@ -13,19 +15,31 @@ class FirebaseManager:
     def _initialize_firebase(self):
         """Initialiser Firebase"""
         try:
-            # Utiliser les identifiants par défaut (service account)
-            # En production, vous devriez utiliser un fichier de clés de service
+            # Stratégie: 1) GOOGLE_APPLICATION_CREDENTIALS si présent
+            #            2) Application Default Credentials (ADC)
+            #            3) Fallback local sans Firebase
+
+            project_id = Config.FIREBASE_CONFIG.get('projectId')
+
+            gac_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            if gac_path and os.path.exists(gac_path):
+                cred = credentials.Certificate(gac_path)
+                firebase_admin.initialize_app(cred, {'projectId': project_id})
+                self.db = firestore.client()
+                self.logger.info("Firebase initialisé via GOOGLE_APPLICATION_CREDENTIALS")
+                return
+
+            # Essayer ADC (variables d'environnement / métadonnées)
             cred = credentials.ApplicationDefault()
-            firebase_admin.initialize_app(cred, {
-                'projectId': Config.FIREBASE_CONFIG['projectId']
-            })
+            firebase_admin.initialize_app(cred, {'projectId': project_id})
             
             self.db = firestore.client()
-            self.logger.info("Firebase initialisé avec succès")
+            self.logger.info("Firebase initialisé via Application Default Credentials")
             
-        except Exception as e:
+        except (FileNotFoundError, DefaultCredentialsError, Exception) as e:
+            # Journaliser clairement et passer en mode local
             self.logger.error(f"Erreur lors de l'initialisation de Firebase: {str(e)}")
-            # Fallback: utiliser un stockage local
+            self.logger.info("Firebase non configuré. Utilisation du stockage local (fallback).")
             self.db = None
     
     def save_course_content(self, course_id, content):

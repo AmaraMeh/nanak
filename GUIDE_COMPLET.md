@@ -24,7 +24,6 @@ Ce guide vous accompagne pas à pas pour installer, configurer et utiliser le Bo
 
 ### Logiciels requis
 - **Python 3.8+**
-- **Chrome/Chromium**
 - **Git** (optionnel)
 
 ### Comptes nécessaires
@@ -67,19 +66,17 @@ cp .env.example .env
 #### Ubuntu/Debian
 ```bash
 sudo apt update
-sudo apt install python3 python3-pip google-chrome-stable
+sudo apt install python3 python3-pip
 ```
 
 #### CentOS/RHEL
 ```bash
 sudo yum install python3 python3-pip
-sudo yum install google-chrome-stable
 ```
 
 #### Windows
 ```bash
 # Installer Python depuis python.org
-# Installer Chrome depuis google.com/chrome
 ```
 
 ## ⚙️ Configuration
@@ -125,7 +122,7 @@ TELEGRAM_API_HASH=847c2d71463d5940bc55648eb9241b51
 python setup.py
 
 # Vérifier les imports
-python -c "import requests, selenium, telegram, firebase_admin, schedule; print('✅ Tous les modules OK')"
+python -c "import requests, bs4, telegram, firebase_admin, schedule; print('✅ Tous les modules OK')"
 ```
 
 ## 🎮 Premier démarrage
@@ -280,16 +277,8 @@ asyncio.run(test())
 2. Le bot récupérera automatiquement votre Chat ID
 3. Redémarrez le bot
 
-### Problèmes Chrome/Selenium
-
-#### Erreur : "ChromeDriver non trouvé"
-```bash
-# Installer Chrome
-sudo apt install google-chrome-stable
-
-# Ou installer Chromium
-sudo apt install chromium-browser
-```
+### Notes sur Selenium/Chrome
+Le bot n'utilise plus Selenium/Chrome. Le scraping est effectué via HTTP (requests + BeautifulSoup) et fonctionne en environnements cloud sans navigateur.
 
 #### Erreur : "Permission denied"
 ```bash

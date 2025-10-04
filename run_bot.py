@@ -12,10 +12,10 @@ def check_requirements():
     """Vérifier que tous les prérequis sont installés"""
     try:
         import requests
-        import selenium
         import telegram
         import firebase_admin
         import schedule
+        import bs4
         print("✅ Toutes les dépendances sont installées")
         return True
     except ImportError as e:
