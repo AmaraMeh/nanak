@@ -59,7 +59,6 @@ def test_configuration():
         
         # Test des imports
         import requests
-        import selenium
         import telegram
         import firebase_admin
         import schedule
