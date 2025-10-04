@@ -1,0 +1,58 @@
+Elearning Monitor Bot – Guide d'installation et d'hébergement
+
+1) Préparation
+- Prérequis: Docker ou Python 3.11+, accès internet sortant, compte Firebase, bot Telegram.
+- Récupérer le code sur votre machine ou VPS.
+
+2) Configuration
+- Copier .env.example en .env et remplir:
+  ELEARNING_USERNAME=...
+  ELEARNING_PASSWORD=...
+  TELEGRAM_BOT_TOKEN=...
+  TELEGRAM_CHAT_ID=...
+  FIREBASE_PROJECT_ID=...
+  FIREBASE_CLIENT_EMAIL=...
+  FIREBASE_PRIVATE_KEY=...(garder \n entre les lignes)
+  SPACES_JSON=./config/spaces.json
+  CHECK_INTERVAL_MINUTES=15
+  REQUEST_TIMEOUT_SECONDS=30
+  LOG_LEVEL=INFO
+  NOTIFY_ON_FIRST_SNAPSHOT=false
+- Vérifier/éditer config/spaces.json pour la liste des espaces.
+
+3) Lancement local (venv)
+- bash scripts/setup.sh
+- cp .env.example .env && éditer .env
+- bash scripts/run.sh
+
+4) Lancement avec Docker
+- docker build -t elearning-bot:latest .
+- docker run --rm --env-file .env -v $(pwd)/config:/app/config:ro elearning-bot:latest
+
+5) Déploiement systemd (VPS)
+- Copier le projet dans /opt/elearning-bot
+- python3 -m venv .venv && source .venv/bin/activate
+- pip install -U pip && pip install -r requirements.txt
+- Créer .env avec vos valeurs
+- Copier le service systemd:
+  sudo cp tools/elearning-bot.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now elearning-bot
+  sudo systemctl status elearning-bot
+
+6) Récupérer le chat_id Telegram
+- Parler au bot depuis votre compte
+- Utiliser @userinfobot ou un script python pour imprimer update.message.chat.id
+
+7) Sécurité
+- Ne commitez jamais .env
+- Limiter les permissions de la clé de service Firebase
+- Restreindre l’accès réseau depuis le VPS
+
+8) Maintenance
+- Journaux: journalctl -u elearning-bot -f
+- Mise à jour: pull du repo, pip install -r requirements.txt, redémarrer le service
+
+9) Personnalisation
+- Adapter les sélecteurs de parsing dans src/elearning_bot/scraper.py si nécessaire
+- Pour un diff plus fin, stocker et comparer du HTML par section/annonce

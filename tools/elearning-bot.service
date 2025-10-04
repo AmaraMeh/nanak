@@ -1,0 +1,14 @@
+[unit]
+Description=Elearning Monitor Bot
+After=network.target
+
+[service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/elearning-bot
+ExecStart=/opt/elearning-bot/.venv/bin/python -m elearning_bot.runner
+Restart=on-failure
+RestartSec=5
+
+[install]
+WantedBy=multi-user.target
