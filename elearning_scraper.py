@@ -1,164 +1,251 @@
 import requests
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
 import time
 import logging
+import re
+from urllib.parse import urljoin, urlparse
 from config import Config
 
 class ELearningScraper:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': Config.USER_AGENT
+            'User-Agent': Config.USER_AGENT,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
         })
-        self.driver = None
         self.logger = logging.getLogger(__name__)
-        
-    def setup_driver(self):
-        """Configure et initialise le driver Chrome avec optimisations"""
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--disable-web-security')
-        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--disable-plugins')
-        chrome_options.add_argument('--disable-images')  # Désactiver les images pour plus de rapidité
-        chrome_options.add_argument('--disable-javascript')  # Désactiver JS si possible
-        chrome_options.add_argument('--disable-css')  # Désactiver CSS pour plus de rapidité
-        chrome_options.add_argument(f'--user-agent={Config.USER_AGENT}')
-        
-        # Optimisations de performance
-        chrome_options.add_argument('--memory-pressure-off')
-        chrome_options.add_argument('--max_old_space_size=4096')
-        
-        # Timeouts
-        chrome_options.add_argument('--page-load-strategy=eager')
-        
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-        # Configurer les timeouts
-        self.driver.set_page_load_timeout(30)
-        self.driver.implicitly_wait(10)
+        self.is_logged_in = False
+        self.login_token = None
         
     def login(self):
-        """Se connecter à la plateforme eLearning"""
+        """Se connecter à la plateforme eLearning via HTTP"""
         try:
-            self.setup_driver()
+            self.logger.info("🔐 Tentative de connexion à eLearning...")
             
-            # Aller à la page de connexion
+            # Étape 1: Récupérer la page de connexion pour obtenir les tokens CSRF
             login_url = f"{Config.ELEARNING_URL}/login/index.php"
-            self.driver.get(login_url)
+            response = self.session.get(login_url, timeout=30)
+            response.raise_for_status()
             
-            # Attendre que la page se charge
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "username"))
-            )
+            soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Remplir les identifiants
-            username_field = self.driver.find_element(By.ID, "username")
-            password_field = self.driver.find_element(By.ID, "password")
+            # Extraire le token de connexion (logintoken)
+            login_token_input = soup.find('input', {'name': 'logintoken'})
+            if login_token_input:
+                self.login_token = login_token_input.get('value')
+                self.logger.info(f"✅ Token de connexion récupéré: {self.login_token[:10]}...")
+            else:
+                self.logger.warning("⚠️ Aucun token de connexion trouvé")
             
-            username_field.send_keys(Config.USERNAME)
-            password_field.send_keys(Config.PASSWORD)
+            # Étape 2: Effectuer la connexion
+            login_data = {
+                'username': Config.USERNAME,
+                'password': Config.PASSWORD,
+                'logintoken': self.login_token or '',
+            }
             
-            # Cliquer sur le bouton de connexion
-            login_button = self.driver.find_element(By.ID, "loginbtn")
-            login_button.click()
+            # Headers pour la requête POST
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Referer': login_url,
+            }
             
-            # Attendre la redirection
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "user-menu"))
-            )
+            response = self.session.post(login_url, data=login_data, headers=headers, timeout=30)
+            response.raise_for_status()
             
-            self.logger.info("Connexion réussie à eLearning")
-            return True
+            # Vérifier si la connexion a réussi
+            if self._check_login_success(response):
+                self.is_logged_in = True
+                self.logger.info("✅ Connexion réussie à eLearning!")
+                return True
+            else:
+                self.logger.error("❌ Échec de la connexion - identifiants incorrects ou problème de session")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"❌ Erreur réseau lors de la connexion: {str(e)}")
+            return False
+        except Exception as e:
+            self.logger.error(f"❌ Erreur lors de la connexion: {str(e)}")
+            return False
+    
+    def _check_login_success(self, response):
+        """Vérifier si la connexion a réussi"""
+        try:
+            # Vérifier la redirection vers le dashboard
+            if response.url and 'login' not in response.url:
+                self.logger.info(f"🔄 Redirection détectée vers: {response.url}")
+                return True
+            
+            # Vérifier le contenu de la page pour des indicateurs de succès
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Chercher des éléments qui indiquent une connexion réussie
+            success_indicators = [
+                soup.find('div', {'class': 'user-menu'}),
+                soup.find('div', {'class': 'usermenu'}),
+                soup.find('a', {'href': lambda x: x and 'logout' in x}),
+                soup.find('div', {'class': 'dashboard'}),
+                soup.find('div', {'class': 'course-content'}),
+            ]
+            
+            if any(success_indicators):
+                self.logger.info("✅ Indicateurs de connexion réussie détectés")
+                return True
+            
+            # Vérifier s'il y a des messages d'erreur
+            error_indicators = [
+                soup.find('div', {'class': 'alert-danger'}),
+                soup.find('div', {'class': 'error'}),
+                soup.find(text=re.compile(r'Invalid login|incorrect|failed', re.I)),
+            ]
+            
+            if any(error_indicators):
+                self.logger.error("❌ Messages d'erreur de connexion détectés")
+                return False
+            
+            # Si on arrive ici, c'est ambigu - on considère comme un échec par sécurité
+            self.logger.warning("⚠️ Statut de connexion ambigu")
+            return False
             
         except Exception as e:
-            self.logger.error(f"Erreur lors de la connexion: {str(e)}")
+            self.logger.error(f"❌ Erreur lors de la vérification de connexion: {str(e)}")
             return False
     
     def get_course_content(self, course_url, course_id):
-        """Récupérer le contenu d'un cours spécifique avec gestion d'erreurs améliorée"""
+        """Récupérer le contenu d'un cours spécifique via HTTP"""
         max_retries = 3
         retry_count = 0
         
         while retry_count < max_retries:
             try:
-                if not self.driver:
+                # Vérifier la connexion
+                if not self.is_logged_in:
                     if not self.login():
                         return None
                 
-                # Aller à la page du cours
-                self.driver.get(course_url)
+                self.logger.info(f"📖 Récupération du contenu pour le cours {course_id}")
                 
-                # Attendre que la page se charge avec timeout plus long
-                WebDriverWait(self.driver, 20).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "course-content"))
-                )
+                # Récupérer la page du cours
+                response = self.session.get(course_url, timeout=30)
+                response.raise_for_status()
+                
+                # Vérifier si on est toujours connecté
+                if 'login' in response.url:
+                    self.logger.warning("⚠️ Session expirée, reconnexion...")
+                    self.is_logged_in = False
+                    if not self.login():
+                        return None
+                    # Réessayer la requête
+                    response = self.session.get(course_url, timeout=30)
+                    response.raise_for_status()
+                
+                # Parser le contenu
+                soup = BeautifulSoup(response.content, 'html.parser')
                 
                 # Extraire le contenu principal
                 content = {
                     'course_id': course_id,
                     'url': course_url,
                     'timestamp': time.time(),
-                    'sections': []
+                    'sections': [],
+                    'title': self._extract_course_title(soup),
+                    'raw_content': str(soup)  # Garder le contenu brut pour analyse
                 }
                 
-                # Récupérer les sections du cours avec plusieurs sélecteurs
-                sections = []
-                selectors = [".section", ".course-section", ".course-content .section"]
+                # Récupérer les sections du cours
+                sections = self._extract_sections(soup)
+                content['sections'] = sections
                 
-                for selector in selectors:
-                    try:
-                        sections = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                        if sections:
-                            break
-                    except:
-                        continue
-                
-                if not sections:
-                    # Essayer de récupérer le contenu même sans sections spécifiques
-                    self.logger.warning(f"Aucune section trouvée pour le cours {course_id}, tentative de récupération générale")
-                    sections = self.driver.find_elements(By.CSS_SELECTOR, ".course-content > *")
-                
-                for section in sections:
-                    try:
-                        section_data = self._extract_section_data(section)
-                        if section_data:
-                            content['sections'].append(section_data)
-                    except Exception as section_error:
-                        self.logger.warning(f"Erreur lors de l'extraction d'une section: {str(section_error)}")
-                        continue
-                
-                self.logger.info(f"Contenu récupéré pour le cours {course_id}: {len(content['sections'])} sections")
+                self.logger.info(f"✅ Contenu récupéré pour le cours {course_id}: {len(sections)} sections")
                 return content
                 
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 retry_count += 1
-                self.logger.warning(f"Tentative {retry_count}/{max_retries} échouée pour le cours {course_id}: {str(e)}")
+                self.logger.warning(f"⚠️ Tentative {retry_count}/{max_retries} échouée pour le cours {course_id}: {str(e)}")
                 
                 if retry_count < max_retries:
                     time.sleep(2)  # Attendre avant de réessayer
-                    # Recréer le driver si nécessaire
-                    if "chrome not reachable" in str(e).lower() or "session deleted" in str(e).lower():
-                        self.close()
-                        self.setup_driver()
                 else:
-                    self.logger.error(f"Échec définitif pour le cours {course_id} après {max_retries} tentatives")
+                    self.logger.error(f"❌ Échec définitif pour le cours {course_id} après {max_retries} tentatives")
+                    return None
+            except Exception as e:
+                retry_count += 1
+                self.logger.error(f"❌ Erreur inattendue pour le cours {course_id}: {str(e)}")
+                
+                if retry_count < max_retries:
+                    time.sleep(2)
+                else:
                     return None
         
         return None
+    
+    def _extract_course_title(self, soup):
+        """Extraire le titre du cours"""
+        try:
+            # Essayer différents sélecteurs pour le titre
+            title_selectors = [
+                'h1.course-title',
+                'h1',
+                '.page-header h1',
+                '.course-header h1',
+                'title'
+            ]
+            
+            for selector in title_selectors:
+                title_elem = soup.select_one(selector)
+                if title_elem:
+                    title = title_elem.get_text().strip()
+                    if title and len(title) > 3:  # Éviter les titres trop courts
+                        return title
+            
+            return "Titre non trouvé"
+        except Exception as e:
+            self.logger.warning(f"⚠️ Erreur lors de l'extraction du titre: {str(e)}")
+            return "Titre non trouvé"
+    
+    def _extract_sections(self, soup):
+        """Extraire les sections du cours"""
+        sections = []
+        
+        try:
+            # Essayer différents sélecteurs pour les sections
+            section_selectors = [
+                '.section',
+                '.course-section',
+                '.course-content .section',
+                '.course-content > div',
+                '.course-content .activity',
+            ]
+            
+            section_elements = []
+            for selector in section_selectors:
+                elements = soup.select(selector)
+                if elements:
+                    section_elements = elements
+                    self.logger.info(f"📋 Trouvé {len(elements)} sections avec le sélecteur: {selector}")
+                    break
+            
+            if not section_elements:
+                # Si aucune section spécifique trouvée, essayer de récupérer tout le contenu
+                self.logger.warning("⚠️ Aucune section spécifique trouvée, extraction du contenu général")
+                main_content = soup.select_one('.course-content') or soup.select_one('main') or soup.select_one('body')
+                if main_content:
+                    section_elements = [main_content]
+            
+            for section in section_elements:
+                section_data = self._extract_section_data(section)
+                if section_data:
+                    sections.append(section_data)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur lors de l'extraction des sections: {str(e)}")
+        
+        return sections
     
     def _extract_section_data(self, section_element):
         """Extraire les données d'une section"""
@@ -166,89 +253,81 @@ class ELearningScraper:
             section_data = {
                 'title': '',
                 'activities': [],
-                'resources': []
+                'resources': [],
+                'content': '',
+                'links': []
             }
             
             # Titre de la section
-            title_element = section_element.find_element(By.CSS_SELECTOR, ".sectionname")
-            section_data['title'] = title_element.text.strip()
+            title_selectors = ['.sectionname', '.section-title', 'h2', 'h3', '.title']
+            for selector in title_selectors:
+                title_elem = section_element.select_one(selector)
+                if title_elem:
+                    section_data['title'] = title_elem.get_text().strip()
+                    break
             
-            # Activités et ressources
-            activities = section_element.find_elements(By.CSS_SELECTOR, ".activity")
+            # Si pas de titre spécifique, utiliser le texte principal
+            if not section_data['title']:
+                section_data['title'] = section_element.get_text().strip()[:100] + "..." if len(section_element.get_text().strip()) > 100 else section_element.get_text().strip()
             
-            for activity in activities:
-                activity_data = self._extract_activity_data(activity)
-                if activity_data:
-                    if activity_data['type'] == 'resource':
-                        section_data['resources'].append(activity_data)
-                    else:
-                        section_data['activities'].append(activity_data)
+            # Contenu textuel
+            section_data['content'] = section_element.get_text().strip()
+            
+            # Liens et activités
+            links = section_element.find_all('a', href=True)
+            for link in links:
+                link_data = {
+                    'text': link.get_text().strip(),
+                    'url': urljoin(Config.ELEARNING_URL, link['href']),
+                    'title': link.get('title', '')
+                }
+                section_data['links'].append(link_data)
+                
+                # Classifier comme activité ou ressource
+                if any(keyword in link_data['text'].lower() for keyword in ['forum', 'discussion', 'chat']):
+                    section_data['activities'].append({
+                        'title': link_data['text'],
+                        'type': 'forum',
+                        'url': link_data['url']
+                    })
+                elif any(keyword in link_data['text'].lower() for keyword in ['devoir', 'assignment', 'travail']):
+                    section_data['activities'].append({
+                        'title': link_data['text'],
+                        'type': 'assignment',
+                        'url': link_data['url']
+                    })
+                elif any(keyword in link_data['text'].lower() for keyword in ['fichier', 'document', 'pdf', 'doc']):
+                    section_data['resources'].append({
+                        'title': link_data['text'],
+                        'type': 'file',
+                        'url': link_data['url']
+                    })
+                else:
+                    section_data['resources'].append({
+                        'title': link_data['text'],
+                        'type': 'link',
+                        'url': link_data['url']
+                    })
             
             return section_data
             
         except Exception as e:
-            self.logger.error(f"Erreur lors de l'extraction des données de section: {str(e)}")
-            return None
-    
-    def _extract_activity_data(self, activity_element):
-        """Extraire les données d'une activité"""
-        try:
-            activity_data = {
-                'title': '',
-                'type': '',
-                'url': '',
-                'description': '',
-                'files': []
-            }
-            
-            # Titre et lien
-            title_element = activity_element.find_element(By.CSS_SELECTOR, ".activityinstance a")
-            activity_data['title'] = title_element.text.strip()
-            activity_data['url'] = title_element.get_attribute('href')
-            
-            # Type d'activité
-            activity_classes = activity_element.get_attribute('class')
-            if 'resource' in activity_classes:
-                activity_data['type'] = 'resource'
-            elif 'forum' in activity_classes:
-                activity_data['type'] = 'forum'
-            elif 'assign' in activity_classes:
-                activity_data['type'] = 'assignment'
-            else:
-                activity_data['type'] = 'other'
-            
-            # Description si disponible
-            try:
-                description_element = activity_element.find_element(By.CSS_SELECTOR, ".activity-description")
-                activity_data['description'] = description_element.text.strip()
-            except:
-                pass
-            
-            # Fichiers associés
-            try:
-                file_elements = activity_element.find_elements(By.CSS_SELECTOR, ".file-picker a")
-                for file_elem in file_elements:
-                    file_data = {
-                        'name': file_elem.text.strip(),
-                        'url': file_elem.get_attribute('href')
-                    }
-                    activity_data['files'].append(file_data)
-            except:
-                pass
-            
-            return activity_data
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de l'extraction des données d'activité: {str(e)}")
+            self.logger.error(f"❌ Erreur lors de l'extraction des données de section: {str(e)}")
             return None
     
     def get_all_courses_content(self):
-        """Récupérer le contenu de tous les cours surveillés avec gestion d'erreurs améliorée"""
+        """Récupérer le contenu de tous les cours surveillés"""
         all_content = {}
         successful_scans = 0
         failed_scans = 0
         
-        self.logger.info(f"Début du scan de {len(Config.MONITORED_SPACES)} espaces d'affichage")
+        self.logger.info(f"🔍 Début du scan de {len(Config.MONITORED_SPACES)} espaces d'affichage")
+        
+        # S'assurer qu'on est connecté
+        if not self.is_logged_in:
+            if not self.login():
+                self.logger.error("❌ Impossible de se connecter, arrêt du scan")
+                return {}
         
         for i, space in enumerate(Config.MONITORED_SPACES, 1):
             self.logger.info(f"[{i}/{len(Config.MONITORED_SPACES)}] Récupération du contenu pour: {space['name']}")
@@ -267,13 +346,13 @@ class ELearningScraper:
                 self.logger.error(f"❌ Erreur pour {space['name']}: {str(e)}")
             
             # Pause entre les requêtes pour éviter la surcharge
-            time.sleep(3)
+            time.sleep(2)
         
-        self.logger.info(f"Scan terminé: {successful_scans} succès, {failed_scans} échecs")
+        self.logger.info(f"📊 Scan terminé: {successful_scans} succès, {failed_scans} échecs")
         return all_content
     
     def close(self):
-        """Fermer le driver"""
-        if self.driver:
-            self.driver.quit()
-            self.driver = None
+        """Fermer la session"""
+        if self.session:
+            self.session.close()
+            self.logger.info("🔒 Session fermée")
