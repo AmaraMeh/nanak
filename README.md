@@ -6,11 +6,14 @@ Un bot Python automatisé qui surveille les espaces d'affichage de la plateforme
 
 - 🔐 **Connexion sécurisée** à la plateforme eLearning
 - 📚 **Surveillance automatique** de 42 espaces d'affichage
-- 🔍 **Détection intelligente** des changements (nouveaux fichiers, modifications, suppressions)
-- 📱 **Notifications Telegram** instantanées
-- 💾 **Stockage Firebase** avec fallback local
+- 🔍 **Premier scan complet** : Extraction de tout le contenu existant au démarrage
+- 📱 **Notifications Telegram** intelligentes avec gestion du spam initial
+- 💾 **Stockage Firebase** avec fallback local sécurisé
 - ⏰ **Surveillance continue** toutes les 15 minutes
-- 🛡️ **Sécurité** : identifiants stockés dans des variables d'environnement
+- 🛡️ **Sécurité maximale** : identifiants stockés dans des variables d'environnement
+- 📊 **Monitoring avancé** avec statistiques détaillées et rapports
+- 🔄 **Gestion d'erreurs robuste** avec retry automatique et récupération
+- 🚀 **Performance optimisée** avec scraping rapide et efficace
 
 ## 🚀 Installation Rapide
 
@@ -115,6 +118,15 @@ sudo systemctl restart elearning-bot
 
 # Désactiver le service
 sudo systemctl disable elearning-bot
+
+# Voir les statistiques
+python stats_command.py print
+
+# Envoyer les statistiques via Telegram
+python stats_command.py telegram
+
+# Réinitialiser les statistiques
+python stats_command.py reset
 ```
 
 ## 🔧 Architecture
@@ -127,28 +139,45 @@ elearning-notifier-bot/
 ├── run_bot.py             # Script de démarrage simplifié
 ├── setup.py               # Script de configuration
 ├── config.py              # Configuration centralisée
-├── elearning_scraper.py   # Scraping eLearning
+├── elearning_scraper.py   # Scraping eLearning optimisé
 ├── firebase_manager.py    # Gestion Firebase
-├── change_detector.py     # Détection de changements
-├── telegram_notifier.py   # Notifications Telegram
+├── change_detector.py     # Détection de changements améliorée
+├── telegram_notifier.py   # Notifications Telegram intelligentes
+├── monitoring.py          # Monitoring et statistiques
+├── stats_command.py       # Commandes de statistiques
+├── test_bot.py            # Tests complets
 ├── requirements.txt       # Dépendances Python
 ├── .env.example          # Exemple de configuration
 ├── README.md             # Documentation
+├── GUIDE_COMPLET.md      # Guide détaillé
+├── INSTALLATION_GUIDE.txt # Guide d'installation
+├── Dockerfile            # Support Docker
+├── docker-compose.yml    # Orchestration Docker
+├── start.sh              # Script de démarrage bash
 └── local_storage/        # Stockage local (fallback)
 ```
 
 ### Flux de fonctionnement
 
-1. **Connexion** : Le bot se connecte à eLearning avec vos identifiants
-2. **Scraping** : Récupération du contenu de tous les espaces surveillés
-3. **Comparaison** : Comparaison avec la version précédente stockée
-4. **Détection** : Identification des changements (ajouts, modifications, suppressions)
-5. **Notification** : Envoi d'un message Telegram détaillé
-6. **Stockage** : Sauvegarde du nouveau contenu pour la prochaine vérification
-7. **Attente** : Pause de 15 minutes avant la prochaine vérification
+1. **Démarrage** : Le bot se connecte à eLearning et envoie un message de démarrage
+2. **Premier scan** : Extraction complète de tout le contenu existant (peut générer beaucoup de notifications)
+3. **Scraping optimisé** : Récupération rapide du contenu de tous les espaces surveillés
+4. **Comparaison intelligente** : Comparaison avec la version précédente stockée
+5. **Détection avancée** : Identification des changements (ajouts, modifications, suppressions)
+6. **Notifications groupées** : Envoi de messages Telegram optimisés pour éviter le spam
+7. **Monitoring** : Enregistrement des statistiques et gestion des erreurs
+8. **Stockage sécurisé** : Sauvegarde du nouveau contenu avec fallback local
+9. **Attente** : Pause de 15 minutes avant la prochaine vérification
 
 ## 📊 Types de changements détectés
 
+### Premier scan (extraction complète)
+- 📂 **Sections existantes** avec comptage des éléments
+- 📋 **Activités existantes** (forums, devoirs, etc.)
+- 📚 **Ressources existantes** (fichiers, liens, etc.)
+- 📄 **Fichiers existants** avec détails
+
+### Surveillance continue
 - ➕ **Nouvelles sections** ajoutées
 - ➖ **Sections supprimées**
 - ➕ **Nouvelles activités** (forums, devoirs, etc.)
@@ -220,7 +249,20 @@ git pull
 sudo systemctl start elearning-bot
 ```
 
-## 📈 Monitoring
+## 📈 Monitoring et Statistiques
+
+### Statistiques détaillées
+
+```bash
+# Afficher les statistiques dans le terminal
+python stats_command.py print
+
+# Envoyer les statistiques via Telegram
+python stats_command.py telegram
+
+# Réinitialiser les statistiques
+python stats_command.py reset
+```
 
 ### Vérifier le statut
 
@@ -235,11 +277,22 @@ ps aux | grep python
 htop
 ```
 
-### Logs importants
+### Logs et données
 
 - `bot.log` : Logs détaillés du bot
+- `bot_stats.json` : Statistiques complètes
 - `local_storage/` : Données de fallback
 - `journalctl -u elearning-bot` : Logs systemd
+
+### Rapports automatiques
+
+Le bot génère automatiquement des rapports avec :
+- Temps de fonctionnement
+- Nombre total de scans
+- Taux de succès
+- Notifications envoyées
+- Erreurs récentes
+- Statistiques par cours
 
 ## 🤝 Support
 

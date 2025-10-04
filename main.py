@@ -15,6 +15,7 @@ from elearning_scraper import ELearningScraper
 from firebase_manager import FirebaseManager
 from change_detector import ChangeDetector
 from telegram_notifier import TelegramNotifier
+from monitoring import BotMonitor
 from config import Config
 
 class ELearningBot:
@@ -23,6 +24,7 @@ class ELearningBot:
         self.firebase = FirebaseManager()
         self.detector = ChangeDetector()
         self.notifier = TelegramNotifier()
+        self.monitor = BotMonitor()
         self.logger = self._setup_logging()
         self.running = False
         
@@ -38,9 +40,15 @@ class ELearningBot:
         )
         return logging.getLogger(__name__)
     
-    async def check_all_courses(self):
+    async def check_all_courses(self, is_initial_scan: bool = False):
         """Vérifier tous les cours surveillés"""
-        self.logger.info("Début de la vérification des cours")
+        if is_initial_scan:
+            self.logger.info("🔍 Début du premier scan complet - Extraction de tout le contenu existant")
+        else:
+            self.logger.info("Début de la vérification des cours")
+        
+        # Enregistrer le début du scan
+        self.monitor.record_scan_start()
         
         try:
             # Récupérer le contenu actuel de tous les cours
@@ -48,49 +56,69 @@ class ELearningBot:
             
             if not current_content:
                 self.logger.error("Aucun contenu récupéré")
+                self.monitor.record_error("scan_failed", "Aucun contenu récupéré")
                 return
             
             # Vérifier chaque cours
             for course_id, content in current_content.items():
-                await self._check_single_course(course_id, content)
+                await self._check_single_course(course_id, content, is_initial_scan)
             
-            self.logger.info("Vérification terminée")
+            if is_initial_scan:
+                self.logger.info("✅ Premier scan complet terminé")
+            else:
+                self.logger.info("Vérification terminée")
             
         except Exception as e:
             self.logger.error(f"Erreur lors de la vérification: {str(e)}")
+            self.monitor.record_error("scan_error", str(e))
             await self.notifier.send_error_message(f"Erreur lors de la vérification: {str(e)}")
         
         finally:
             # Fermer le driver
             self.scraper.close()
     
-    async def _check_single_course(self, course_id: str, current_content: dict):
+    async def _check_single_course(self, course_id: str, current_content: dict, is_initial_scan: bool = False):
         """Vérifier un cours spécifique"""
+        course_name = self._get_course_name(course_id)
+        
         try:
             # Récupérer le contenu précédent
             old_content = self.firebase.get_course_content(course_id)
             
             # Détecter les changements
-            changes = self.detector.detect_changes(old_content, current_content)
+            changes = self.detector.detect_changes(old_content, current_content, is_initial_scan)
             
             if changes:
-                # Trouver le nom du cours
-                course_name = self._get_course_name(course_id)
                 course_url = self._get_course_url(course_id)
                 
                 # Envoyer la notification
-                await self.notifier.send_notification(course_name, course_url, changes)
+                await self.notifier.send_notification(course_name, course_url, changes, is_initial_scan)
+                
+                # Enregistrer la notification
+                self.monitor.record_notification(course_id, len(changes))
                 
                 # Sauvegarder le log des changements
                 self.firebase.save_changes_log(course_id, changes)
                 
-                self.logger.info(f"Changements détectés pour {course_name}: {len(changes)} changements")
+                if is_initial_scan:
+                    self.logger.info(f"Premier scan terminé pour {course_name}: {len(changes)} éléments trouvés")
+                else:
+                    self.logger.info(f"Changements détectés pour {course_name}: {len(changes)} changements")
+            
+            # Compter les éléments trouvés
+            total_items = sum(len(section.get('activities', [])) + len(section.get('resources', [])) 
+                             for section in current_content.get('sections', []))
+            
+            # Enregistrer le résultat du scan
+            self.monitor.record_scan_result(course_id, course_name, True, total_items)
             
             # Sauvegarder le nouveau contenu
             self.firebase.save_course_content(course_id, current_content)
             
         except Exception as e:
             self.logger.error(f"Erreur lors de la vérification du cours {course_id}: {str(e)}")
+            self.monitor.record_error("course_scan_error", str(e), course_id)
+            self.monitor.record_scan_result(course_id, course_name, False)
     
     def _get_course_name(self, course_id: str) -> str:
         """Obtenir le nom d'un cours par son ID"""
@@ -112,15 +140,15 @@ class ELearningBot:
         self.running = True
         
         # Envoyer le message de démarrage
-        await self.notifier.send_startup_message()
+        await self.notifier.send_startup_message(self.monitor)
         
         # Planifier la vérification périodique
         schedule.every(Config.CHECK_INTERVAL_MINUTES).minutes.do(
             lambda: asyncio.create_task(self.check_all_courses())
         )
         
-        # Première vérification immédiate
-        await self.check_all_courses()
+        # Première vérification immédiate (scan complet)
+        await self.check_all_courses(is_initial_scan=True)
         
         # Boucle principale
         while self.running:

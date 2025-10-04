@@ -21,17 +21,35 @@ class ELearningScraper:
         self.logger = logging.getLogger(__name__)
         
     def setup_driver(self):
-        """Configure et initialise le driver Chrome"""
+        """Configure et initialise le driver Chrome avec optimisations"""
         chrome_options = Options()
         chrome_options.add_argument('--headless')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
         chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--disable-plugins')
+        chrome_options.add_argument('--disable-images')  # Désactiver les images pour plus de rapidité
+        chrome_options.add_argument('--disable-javascript')  # Désactiver JS si possible
+        chrome_options.add_argument('--disable-css')  # Désactiver CSS pour plus de rapidité
         chrome_options.add_argument(f'--user-agent={Config.USER_AGENT}')
+        
+        # Optimisations de performance
+        chrome_options.add_argument('--memory-pressure-off')
+        chrome_options.add_argument('--max_old_space_size=4096')
+        
+        # Timeouts
+        chrome_options.add_argument('--page-load-strategy=eager')
         
         service = Service(ChromeDriverManager().install())
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        # Configurer les timeouts
+        self.driver.set_page_load_timeout(30)
+        self.driver.implicitly_wait(10)
         
     def login(self):
         """Se connecter à la plateforme eLearning"""
@@ -71,41 +89,76 @@ class ELearningScraper:
             return False
     
     def get_course_content(self, course_url, course_id):
-        """Récupérer le contenu d'un cours spécifique"""
-        try:
-            if not self.driver:
-                if not self.login():
+        """Récupérer le contenu d'un cours spécifique avec gestion d'erreurs améliorée"""
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                if not self.driver:
+                    if not self.login():
+                        return None
+                
+                # Aller à la page du cours
+                self.driver.get(course_url)
+                
+                # Attendre que la page se charge avec timeout plus long
+                WebDriverWait(self.driver, 20).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "course-content"))
+                )
+                
+                # Extraire le contenu principal
+                content = {
+                    'course_id': course_id,
+                    'url': course_url,
+                    'timestamp': time.time(),
+                    'sections': []
+                }
+                
+                # Récupérer les sections du cours avec plusieurs sélecteurs
+                sections = []
+                selectors = [".section", ".course-section", ".course-content .section"]
+                
+                for selector in selectors:
+                    try:
+                        sections = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                        if sections:
+                            break
+                    except:
+                        continue
+                
+                if not sections:
+                    # Essayer de récupérer le contenu même sans sections spécifiques
+                    self.logger.warning(f"Aucune section trouvée pour le cours {course_id}, tentative de récupération générale")
+                    sections = self.driver.find_elements(By.CSS_SELECTOR, ".course-content > *")
+                
+                for section in sections:
+                    try:
+                        section_data = self._extract_section_data(section)
+                        if section_data:
+                            content['sections'].append(section_data)
+                    except Exception as section_error:
+                        self.logger.warning(f"Erreur lors de l'extraction d'une section: {str(section_error)}")
+                        continue
+                
+                self.logger.info(f"Contenu récupéré pour le cours {course_id}: {len(content['sections'])} sections")
+                return content
+                
+            except Exception as e:
+                retry_count += 1
+                self.logger.warning(f"Tentative {retry_count}/{max_retries} échouée pour le cours {course_id}: {str(e)}")
+                
+                if retry_count < max_retries:
+                    time.sleep(2)  # Attendre avant de réessayer
+                    # Recréer le driver si nécessaire
+                    if "chrome not reachable" in str(e).lower() or "session deleted" in str(e).lower():
+                        self.close()
+                        self.setup_driver()
+                else:
+                    self.logger.error(f"Échec définitif pour le cours {course_id} après {max_retries} tentatives")
                     return None
-            
-            # Aller à la page du cours
-            self.driver.get(course_url)
-            
-            # Attendre que la page se charge
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "course-content"))
-            )
-            
-            # Extraire le contenu principal
-            content = {
-                'course_id': course_id,
-                'url': course_url,
-                'timestamp': time.time(),
-                'sections': []
-            }
-            
-            # Récupérer les sections du cours
-            sections = self.driver.find_elements(By.CSS_SELECTOR, ".section")
-            
-            for section in sections:
-                section_data = self._extract_section_data(section)
-                if section_data:
-                    content['sections'].append(section_data)
-            
-            return content
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de la récupération du contenu du cours {course_id}: {str(e)}")
-            return None
+        
+        return None
     
     def _extract_section_data(self, section_element):
         """Extraire les données d'une section"""
@@ -190,16 +243,33 @@ class ELearningScraper:
             return None
     
     def get_all_courses_content(self):
-        """Récupérer le contenu de tous les cours surveillés"""
+        """Récupérer le contenu de tous les cours surveillés avec gestion d'erreurs améliorée"""
         all_content = {}
+        successful_scans = 0
+        failed_scans = 0
         
-        for space in Config.MONITORED_SPACES:
-            self.logger.info(f"Récupération du contenu pour: {space['name']}")
-            content = self.get_course_content(space['url'], space['id'])
-            if content:
-                all_content[space['id']] = content
-            time.sleep(2)  # Pause entre les requêtes
+        self.logger.info(f"Début du scan de {len(Config.MONITORED_SPACES)} espaces d'affichage")
         
+        for i, space in enumerate(Config.MONITORED_SPACES, 1):
+            self.logger.info(f"[{i}/{len(Config.MONITORED_SPACES)}] Récupération du contenu pour: {space['name']}")
+            
+            try:
+                content = self.get_course_content(space['url'], space['id'])
+                if content:
+                    all_content[space['id']] = content
+                    successful_scans += 1
+                    self.logger.info(f"✅ Succès pour: {space['name']}")
+                else:
+                    failed_scans += 1
+                    self.logger.error(f"❌ Échec pour: {space['name']}")
+            except Exception as e:
+                failed_scans += 1
+                self.logger.error(f"❌ Erreur pour {space['name']}: {str(e)}")
+            
+            # Pause entre les requêtes pour éviter la surcharge
+            time.sleep(3)
+        
+        self.logger.info(f"Scan terminé: {successful_scans} succès, {failed_scans} échecs")
         return all_content
     
     def close(self):

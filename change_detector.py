@@ -7,19 +7,15 @@ class ChangeDetector:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
     
-    def detect_changes(self, old_content: Optional[Dict], new_content: Dict) -> List[Dict]:
+    def detect_changes(self, old_content: Optional[Dict], new_content: Dict, is_initial_scan: bool = False) -> List[Dict]:
         """
         Détecter les changements entre l'ancien et le nouveau contenu
         """
         changes = []
         
-        if old_content is None:
-            # Premier scan - tout est nouveau
-            changes.append({
-                'type': 'initial_scan',
-                'message': 'Premier scan du cours détecté',
-                'details': f"Nombre de sections: {len(new_content.get('sections', []))}"
-            })
+        if old_content is None or is_initial_scan:
+            # Premier scan - extraire tout le contenu existant
+            changes.extend(self._extract_all_existing_content(new_content))
             return changes
         
         # Comparer les sections
@@ -28,6 +24,85 @@ class ChangeDetector:
         
         section_changes = self._compare_sections(old_sections, new_sections)
         changes.extend(section_changes)
+        
+        return changes
+    
+    def _extract_all_existing_content(self, content: Dict) -> List[Dict]:
+        """Extraire tout le contenu existant pour le premier scan"""
+        changes = []
+        
+        # Ajouter un message de début de scan
+        changes.append({
+            'type': 'initial_scan_start',
+            'message': '🔍 Premier scan complet du cours - Extraction de tout le contenu existant',
+            'details': f"Nombre total de sections: {len(content.get('sections', []))}"
+        })
+        
+        sections = content.get('sections', [])
+        total_items = 0
+        
+        for section in sections:
+            section_title = section.get('title', 'Sans titre')
+            
+            # Compter les éléments dans cette section
+            activities = section.get('activities', [])
+            resources = section.get('resources', [])
+            section_total = len(activities) + len(resources)
+            total_items += section_total
+            
+            if section_total > 0:
+                changes.append({
+                    'type': 'existing_section',
+                    'section_title': section_title,
+                    'message': f'📂 Section existante: {section_title}',
+                    'details': f"Activités: {len(activities)}, Ressources: {len(resources)}"
+                })
+                
+                # Ajouter chaque activité existante
+                for activity in activities:
+                    changes.append({
+                        'type': 'existing_activity',
+                        'activity_title': activity.get('title', 'Sans titre'),
+                        'activity_type': activity.get('type', 'unknown'),
+                        'message': f'📋 Activité existante: {activity.get("title", "Sans titre")}',
+                        'details': self._get_activity_summary(activity)
+                    })
+                    
+                    # Ajouter chaque fichier dans l'activité
+                    for file_info in activity.get('files', []):
+                        changes.append({
+                            'type': 'existing_file',
+                            'file_name': file_info.get('name', 'Sans nom'),
+                            'parent_title': activity.get('title', 'Sans titre'),
+                            'message': f'📄 Fichier existant: {file_info.get("name", "Sans nom")}',
+                            'details': f'Dans l\'activité: {activity.get("title", "Sans titre")}'
+                        })
+                
+                # Ajouter chaque ressource existante
+                for resource in resources:
+                    changes.append({
+                        'type': 'existing_resource',
+                        'resource_title': resource.get('title', 'Sans titre'),
+                        'message': f'📚 Ressource existante: {resource.get("title", "Sans titre")}',
+                        'details': self._get_resource_summary(resource)
+                    })
+                    
+                    # Ajouter chaque fichier dans la ressource
+                    for file_info in resource.get('files', []):
+                        changes.append({
+                            'type': 'existing_file',
+                            'file_name': file_info.get('name', 'Sans nom'),
+                            'parent_title': resource.get('title', 'Sans titre'),
+                            'message': f'📄 Fichier existant: {file_info.get("name", "Sans nom")}',
+                            'details': f'Dans la ressource: {resource.get("title", "Sans titre")}'
+                        })
+        
+        # Ajouter un message de fin de scan
+        changes.append({
+            'type': 'initial_scan_complete',
+            'message': f'✅ Premier scan terminé - {total_items} éléments trouvés',
+            'details': f"Le cours contient {len(sections)} sections avec {total_items} éléments au total"
+        })
         
         return changes
     
