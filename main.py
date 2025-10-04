@@ -142,6 +142,16 @@ class ELearningBot:
         # Envoyer le message de démarrage
         await self.notifier.send_startup_message(self.monitor)
         
+        # Vérifier la connexion eLearning dès le démarrage pour le debug
+        try:
+            login_ok = self.scraper.login()
+            if login_ok:
+                self.logger.info("🔐 Login eLearning effectué avec succès au démarrage")
+            else:
+                self.logger.warning("🔐 Échec du login eLearning au démarrage (une nouvelle tentative aura lieu lors du premier accès au cours)")
+        except Exception as e:
+            self.logger.error(f"Erreur lors du login eLearning au démarrage: {str(e)}")
+
         # Planifier la vérification périodique
         schedule.every(Config.CHECK_INTERVAL_MINUTES).minutes.do(
             lambda: asyncio.create_task(self.check_all_courses())
