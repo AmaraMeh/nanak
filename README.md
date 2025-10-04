@@ -20,7 +20,6 @@ Un bot Python automatisé qui surveille les espaces d'affichage de la plateforme
 ### 1. Prérequis
 
 - Python 3.8+
-- Chrome/Chromium installé
 - Compte Telegram avec bot créé
 
 ### 2. Installation
@@ -216,15 +215,8 @@ cat .env | grep TELEGRAM_TOKEN
 # Envoyer un message au bot pour obtenir le chat ID
 ```
 
-#### Erreur Chrome/Selenium
-```bash
-# Installer Chrome
-sudo apt update
-sudo apt install google-chrome-stable
-
-# Ou utiliser Chromium
-sudo apt install chromium-browser
-```
+#### Exécution en environnement cloud
+Le bot ne requiert plus de navigateur. Il fonctionne via HTTP et peut tourner sur des environnements sans interface graphique (serverless, conteneurs légers).
 
 ### Logs
 
