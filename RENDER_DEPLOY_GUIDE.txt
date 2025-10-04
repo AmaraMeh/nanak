@@ -1,0 +1,243 @@
+Guide complet de déploiement sur Render.com pour le bot eLearning
+=================================================================
+
+Projet: Bot de surveillance eLearning (Python + polling Telegram + scraping HTTP)
+Objectif: Faire tourner le bot 24/7 sur Render.
+
+-----------------------------------------------------------------
+1. Choisir le bon type de service Render
+-----------------------------------------------------------------
+Render propose plusieurs types:
+- Web Service: Doit écouter un PORT (HTTP). Utilise un routeur. Redémarre si aucun port n'est ouvert.
+- Background Worker (Worker): Exécute un processus longue durée sans obligation d'écouter un port. Idéal pour ce bot (polling Telegram + tâches périodiques).
+- Cron Job: Exécute une commande à intervalles définis; pas adapté ici.
+
+RECOMMANDÉ: Worker.
+OPTIONNEL: Web Service si vous voulez exposer /health.
+
+-----------------------------------------------------------------
+2. Préparation locale (facultatif mais conseillé)
+-----------------------------------------------------------------
+1. Créez un repo Git (si pas déjà fait) et poussez vers GitHub / GitLab.
+2. Vérifiez que `requirements.txt` contient toutes les dépendances (OK dans ce projet).
+3. Assurez-vous que vos secrets ne sont pas committés (le fichier .env NE doit PAS être poussé publiquement).
+
+-----------------------------------------------------------------
+3. Variables d'environnement à prévoir sur Render
+-----------------------------------------------------------------
+Obligatoires:
+- ELEARNING_USERNAME
+- ELEARNING_PASSWORD
+- TELEGRAM_TOKEN
+- TELEGRAM_CHAT_ID (chat du bot pour envoyer directement, ex: obtenu via @RawDataBot ou via un premier /start)
+
+Optionnelles / Config comportement:
+- INITIAL_SCAN_MODE=separate|grouped (par défaut separate)
+- INITIAL_SCAN_DETAIL_LEVEL=summary|full
+- SEND_FILES_AS_DOCUMENTS=true|false
+- SEND_NO_UPDATES_MESSAGE=true|false
+- COURSE_VERSIONING=true|false
+- MESSAGE_DELAY_SECONDS=0.3 (ou autre)
+- DB_PROVIDER=firebase (ou supabase si futur adaptateur)
+
+Pour Firebase (si vous configurez des credentials JSON):
+- GOOGLE_APPLICATION_CREDENTIALS=/app/firebase.json (puis déposez un secret file via Render) OU laissez vide pour fallback local
+
+-----------------------------------------------------------------
+4. Fichier render.yaml (Worker)
+-----------------------------------------------------------------
+Vous pouvez provisionner automatiquement le service en ajoutant ce fichier à la racine puis en activant "Auto Deploy".
+
+Exemple (déjà présent, enrichi):
+
+services:
+  - type: worker
+    name: elearning-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python run_bot.py"
+    autoDeploy: true
+    envVars:
+      - key: ELEARNING_USERNAME
+        sync: false
+      - key: ELEARNING_PASSWORD
+        sync: false
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: INITIAL_SCAN_MODE
+        value: separate
+      - key: INITIAL_SCAN_DETAIL_LEVEL
+        value: summary
+      - key: SEND_FILES_AS_DOCUMENTS
+        value: "true"
+      - key: SEND_NO_UPDATES_MESSAGE
+        value: "true"
+      - key: COURSE_VERSIONING
+        value: "true"
+
+NOTES:
+- sync:false = vous devrez définir la valeur dans le dashboard Render (sécurité).
+- Pour désactiver l'envoi des fichiers: mettez SEND_FILES_AS_DOCUMENTS="false".
+
+-----------------------------------------------------------------
+5. Build & Start Commands (Worker)
+-----------------------------------------------------------------
+Build command:
+  pip install -r requirements.txt
+
+Start command:
+  python run_bot.py
+
+Aucune autre préparation nécessaire. Render installe Python automatiquement.
+
+-----------------------------------------------------------------
+6. Variante Web Service avec endpoint /health
+-----------------------------------------------------------------
+Si vous voulez un Web Service (monitoring extérieur) :
+1. Ajouter FastAPI & Uvicorn dans requirements.txt:
+   fastapi
+   uvicorn
+2. Créer un fichier web_app.py:
+
+   import asyncio, os
+   from fastapi import FastAPI
+   from main import ELearningBot
+   import uvicorn
+
+   app = FastAPI()
+   bot = ELearningBot()
+   bot_task = None
+
+   @app.on_event("startup")
+   async def startup():
+       global bot_task
+       bot_task = asyncio.create_task(bot.start())
+
+   @app.on_event("shutdown")
+   async def shutdown():
+       bot.stop()
+       if bot_task:
+           bot_task.cancel()
+
+   @app.get("/health")
+   async def health():
+       return {"status": "ok", "scans": bot.monitor.stats.get("total_scans", 0)}
+
+   if __name__ == "__main__":
+       port = int(os.getenv("PORT", 8000))
+       uvicorn.run(app, host="0.0.0.0", port=port)
+
+3. Adapter render.yaml:
+
+services:
+  - type: web
+    name: elearning-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python web_app.py"
+    autoDeploy: true
+    envVars: (mêmes que Worker)
+
+-----------------------------------------------------------------
+7. Logs et supervision
+-----------------------------------------------------------------
+- Accéder aux logs: onglet Logs du service.
+- Premier scan peut être long (envoi inventaire). Attendez qu'il termine.
+- Si aucune notification: assurez-vous que TELEGRAM_CHAT_ID est correct.
+
+Astuce debug Telegram:
+- Enlevez TELEGRAM_CHAT_ID et envoyez /start au bot → le code capture le chat ID.
+- Remettez ensuite la variable pour stabiliser.
+
+-----------------------------------------------------------------
+8. Mises à jour du code
+-----------------------------------------------------------------
+1. Pousser sur main (si autoDeploy activé) → Render reconstruit.
+2. Sinon cliquer "Manual Deploy".
+3. Pour rollback: Render > Deploys > choisir un déploiement précédent > Rollback.
+
+-----------------------------------------------------------------
+9. Stratégies d'optimisation / coûts
+-----------------------------------------------------------------
+- plan: free suffit (polling modéré toutes les 15 min + HTTP requests). 
+- Réduire la charge: augmenter CHECK_INTERVAL_MINUTES ou ajouter un mode adaptatif.
+- Gérer la taille dossier downloads/ (purge périodique si nécessaire).
+
+-----------------------------------------------------------------
+10. Sécurité
+-----------------------------------------------------------------
+- Ne push jamais de vrais identifiants dans Git.
+- Placez les secrets uniquement dans Render env vars.
+- Option: activer 2FA sur Render.
+
+-----------------------------------------------------------------
+11. Gestion Firebase (optionnel)
+-----------------------------------------------------------------
+Si vous voulez utiliser des credentials JSON:
+- Ajouter un secret file firebase.json (Render > Environment > Secret Files).
+- Ajouter var d'environnement GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase.json (ou le chemin donné par Render).
+- Sinon: fallback local_storage/ utilisé.
+
+-----------------------------------------------------------------
+12. Checklist rapide
+-----------------------------------------------------------------
+[ ] Repo Git accessible
+[ ] render.yaml présent OU création manuelle du service Worker
+[ ] Variables d'environnement saisies
+[ ] TELEGRAM_CHAT_ID correct (entier)
+[ ] Déploiement lancé
+[ ] Logs surveillés jusqu'au premier "Premier scan terminé"
+[ ] Notification reçue sur Telegram
+
+-----------------------------------------------------------------
+13. Problèmes fréquents & solutions
+-----------------------------------------------------------------
+A) Redémarrages en boucle Web Service:
+   -> Vous avez choisi type web sans serveur HTTP. Passer en Worker ou ajouter web_app.py.
+B) Aucune notification:
+   -> Mauvais TELEGRAM_TOKEN ou chat id. Tester localement `python -c "from telegram import Bot; print(Bot(token='TOKEN').get_me())"`.
+C) Firebase erreurs d'auth:
+   -> Ignorées et fallback local. Ajouter credentials pour persistance cloud réelle.
+D) Trop de messages au premier scan:
+   -> Mettre INITIAL_SCAN_DETAIL_LEVEL=summary ou INITIAL_SCAN_MODE=grouped.
+E) Fichiers non envoyés:
+   -> Vérifier SEND_FILES_AS_DOCUMENTS=true et taille (<50MB).
+
+-----------------------------------------------------------------
+14. Docker (option alternative)
+-----------------------------------------------------------------
+Si vous préférez contrôler l'image:
+Dockerfile existant (adapter si besoin) puis dans Render créer un service en mode Docker.
+Build command ignorée (Render build directement docker). Exposer un CMD ["python", "run_bot.py"].
+
+-----------------------------------------------------------------
+15. Exemples exacts de configuration (Worker)
+-----------------------------------------------------------------
+Build Command:
+  pip install -r requirements.txt
+
+Start Command:
+  python run_bot.py
+
+-----------------------------------------------------------------
+16. Étapes finales de validation
+-----------------------------------------------------------------
+1. Déploiement effectué.
+2. Lire logs: connexion eLearning réussie / début premier scan.
+3. Réception du message de démarrage Telegram.
+4. À la fin: message Résumé Initial Global.
+5. Attendre 15 minutes: soit changements, soit message "Aucun nouveau changement".
+
+-----------------------------------------------------------------
+17. Extensions futures sur Render
+-----------------------------------------------------------------
+- Ajouter un second Worker pour tâches analytiques (digest programmé).
+- Ajouter un cron job Render exécutant un script de purge hebdomadaire.
+- Mettre en place un Web Service minimal pour monitoring public (/health, /stats JSON).
+
+-----------------------------------------------------------------
+Fin du guide.

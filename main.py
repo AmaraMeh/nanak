@@ -190,9 +190,15 @@ class ELearningBot:
         # Lancer boucle de commandes Telegram (polling)
         asyncio.create_task(self.notifier.command_loop())
 
-        while self.running:
-            schedule.run_pending()
-            await asyncio.sleep(1)
+        while self.running and not self.stop_requested:
+            try:
+                schedule.run_pending()
+                await asyncio.sleep(1)
+            except Exception as loop_err:
+                self.logger.error(f"Boucle principale erreur: {loop_err}")
+                await asyncio.sleep(3)
+                # Continuer sauf si arrêt demandé
+                continue
     
     def stop(self):
         """Arrêter le bot"""

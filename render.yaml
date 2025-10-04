@@ -8,20 +8,32 @@ services:
     autoDeploy: true
     envVars:
       - key: ELEARNING_USERNAME
-        sync: false
-      - key: ELEARNING_PASSWORD
-        sync: false
-      - key: TELEGRAM_TOKEN
-        sync: false
-      - key: INITIAL_SCAN_MODE
-        value: separate
-      - key: SEND_FILES_AS_DOCUMENTS
-        value: "true"
-      - key: MESSAGE_DELAY_SECONDS
-        value: "0.3"
-      - key: INITIAL_SCAN_DETAIL_LEVEL
-        value: summary
-      - key: SEND_NO_UPDATES_MESSAGE
-        value: "true"
-      - key: TELEGRAM_CHAT_ID
-        sync: false
+        services:
+          - type: web
+            name: elearning-bot
+            env: python
+            plan: free
+            buildCommand: "pip install -r requirements.txt"
+            startCommand: "python web_app.py"
+            autoDeploy: true
+            envVars:
+              - key: ELEARNING_USERNAME
+                sync: false
+              - key: ELEARNING_PASSWORD
+                sync: false
+              - key: TELEGRAM_TOKEN
+                sync: false
+              - key: TELEGRAM_CHAT_ID
+                sync: false
+              - key: INITIAL_SCAN_MODE
+                value: separate
+              - key: INITIAL_SCAN_DETAIL_LEVEL
+                value: summary
+              - key: SEND_FILES_AS_DOCUMENTS
+                value: "true"
+              - key: SEND_NO_UPDATES_MESSAGE
+                value: "true"
+              - key: COURSE_VERSIONING
+                value: "true"
+              - key: MESSAGE_DELAY_SECONDS
+                value: "0.3"

@@ -44,33 +44,52 @@ def check_config():
     return True
 
 async def main():
-    """Fonction principale"""
+    """Fonction principale avec boucle de résilience pour éviter arrêt prématuré"""
     print("🤖 Démarrage du Bot eLearning Notifier")
     print("=" * 50)
-    
+
     # Vérifications préliminaires
     if not check_requirements():
         sys.exit(1)
-    
+
     if not check_config():
         sys.exit(1)
-    
+
     print(f"📚 Surveillance de {len(Config.MONITORED_SPACES)} espaces d'affichage")
     print(f"⏱️ Vérification toutes les {Config.CHECK_INTERVAL_MINUTES} minutes")
     print("=" * 50)
-    
-    # Créer et démarrer le bot
-    bot = ELearningBot()
-    
-    try:
-        await bot.start()
-    except KeyboardInterrupt:
-        print("\n🛑 Arrêt demandé par l'utilisateur")
-    except Exception as e:
-        print(f"❌ Erreur: {str(e)}")
-    finally:
-        bot.stop()
-        print("👋 Bot arrêté")
+
+    restart_count = 0
+    MAX_RESTARTS = 50
+    BACKOFF_SECONDS = 5
+
+    while True:
+        bot = ELearningBot()
+        try:
+            await bot.start()  # ne devrait pas retourner tant qu'on n'a pas demandé stop
+            if bot.stop_requested:
+                print("🛑 Arrêt demandé manuellement — sortie propre")
+                break
+            # Si on arrive ici sans stop explicite, on va relancer
+            print("⚠️ start() a terminé sans demande d'arrêt. Redémarrage automatique...")
+        except KeyboardInterrupt:
+            print("\n🛑 Arrêt demandé par l'utilisateur (CTRL+C)")
+            bot.stop_requested = True
+            bot.stop()
+            break
+        except Exception as e:
+            print(f"❌ Erreur runtime: {e}. Redémarrage dans {BACKOFF_SECONDS}s...")
+        finally:
+            bot.stop()
+            print("🔁 Cycle bot terminé")
+
+        restart_count += 1
+        if restart_count >= MAX_RESTARTS:
+            print("❌ Nombre maximal de redémarrages atteint. Abandon.")
+            break
+        await asyncio.sleep(BACKOFF_SECONDS)
+
+    print("👋 Bot arrêté")
 
 if __name__ == "__main__":
     asyncio.run(main())
