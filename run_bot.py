@@ -66,12 +66,9 @@ async def main():
     while True:
         bot = ELearningBot()
         try:
-            await bot.start()  # ne devrait pas retourner tant qu'on n'a pas demandé stop
-            if bot.stop_requested:
-                print("🛑 Arrêt demandé manuellement — sortie propre")
-                break
-            # Si on arrive ici sans stop explicite, on va relancer
-            print("⚠️ start() a terminé sans demande d'arrêt. Redémarrage automatique...")
+            await bot.start()  # ne devrait normalement pas retourner
+            # Quel que soit le motif (sauf Ctrl+C intercepté ailleurs), on relance
+            print("⚠️ start() a terminé (aucun arrêt manuel autorisé). Redémarrage automatique...")
         except KeyboardInterrupt:
             print("\n🛑 Arrêt demandé par l'utilisateur (CTRL+C)")
             bot.stop_requested = True
@@ -85,11 +82,13 @@ async def main():
 
         restart_count += 1
         if restart_count >= MAX_RESTARTS:
-            print("❌ Nombre maximal de redémarrages atteint. Abandon.")
-            break
+            print("❌ Nombre maximal de redémarrages atteint. Pause 60s puis reprise.")
+            restart_count = 0
+            await asyncio.sleep(60)
+            continue
         await asyncio.sleep(BACKOFF_SECONDS)
 
-    print("👋 Bot arrêté")
+    print("👋 Boucle de supervision terminée (CTRL+C)")
 
 if __name__ == "__main__":
     asyncio.run(main())

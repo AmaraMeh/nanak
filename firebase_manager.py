@@ -57,26 +57,34 @@ class FirebaseManager:
             self.db = None
     
     def save_course_content(self, course_id, content):
-        """Sauvegarder le contenu d'un cours (avec versioning possible)."""
+        """Sauvegarder le contenu d'un cours avec structure hiérarchique:
+        collection: courses/{course_id}
+          doc: meta (snapshot courant)
+          subcollection: versions (historique si versioning)
+        """
         try:
             if self.provider == 'supabase':
                 return self._save_supabase_course(course_id, content)
             if self.db:
-                doc_ref = self.db.collection('course_content').document(course_id)
-                existing = doc_ref.get()
+                course_root = self.db.collection('courses').document(course_id)
+                meta_ref = course_root.collection('meta').document('current')
+                existing = meta_ref.get()
                 version = 1
                 if existing.exists and Config.COURSE_VERSIONING:
                     try:
                         version = int(existing.to_dict().get('version', 1)) + 1
                     except Exception:
                         version = 1
-                doc_ref.set({
+                meta_payload = {
                     'content': content,
                     'timestamp': content['timestamp'],
                     'version': version,
-                    'last_updated': firestore.SERVER_TIMESTAMP
-                })
-                self.logger.info(f"Contenu sauvegardé (firebase) {course_id}")
+                    'updated_at': firestore.SERVER_TIMESTAMP
+                }
+                meta_ref.set(meta_payload)
+                if Config.COURSE_VERSIONING:
+                    course_root.collection('versions').document(f"v{version}").set(meta_payload)
+                self.logger.info(f"Contenu sauvegardé Firebase (structuré) {course_id} v{version}")
                 return True
             return self._save_local(course_id, content)
         except Exception as e:
@@ -88,11 +96,10 @@ class FirebaseManager:
             if self.provider == 'supabase':
                 return self._load_supabase_course(course_id)
             if self.db:
-                doc_ref = self.db.collection('course_content').document(course_id)
-                doc = doc_ref.get()
+                meta_ref = self.db.collection('courses').document(course_id).collection('meta').document('current')
+                doc = meta_ref.get()
                 if doc.exists:
-                    data = doc.to_dict()
-                    return data.get('content')
+                    return doc.to_dict().get('content')
                 return None
             return self._load_local(course_id)
         except Exception as e:
@@ -100,9 +107,8 @@ class FirebaseManager:
             return self._load_local(course_id)
     
     def save_changes_log(self, course_id, changes):
-        """Sauvegarder un lot de changements (avec déduplication basique)."""
+        """Sauvegarder un lot de changements (avec déduplication basique) sous courses/{course_id}/changes."""
         try:
-            # Calcul hash pour éviter doublons exacts
             import hashlib, json as _json
             payload = _json.dumps(changes, sort_keys=True, ensure_ascii=False)
             digest = hashlib.sha1(payload.encode('utf-8')).hexdigest()
@@ -112,15 +118,15 @@ class FirebaseManager:
             if self.provider == 'supabase':
                 return self._save_supabase_changes(course_id, changes, digest)
             if self.db:
-                doc_ref = self.db.collection('changes_log').document()
-                doc_ref.set({
+                changes_col = self.db.collection('courses').document(course_id).collection('changes')
+                changes_col.document().set({
                     'course_id': course_id,
                     'changes': changes,
                     'hash': digest,
                     'timestamp': firestore.SERVER_TIMESTAMP
                 })
                 self._remember_change_hash(course_id, digest)
-                self.logger.info(f"Log changements (firebase) {course_id}")
+                self.logger.info(f"Log changements Firebase (structuré) {course_id}")
                 return True
             ok = self._save_changes_local(course_id, changes, digest)
             if ok:
@@ -128,6 +134,65 @@ class FirebaseManager:
             return ok
         except Exception as e:
             self.logger.error(f"Erreur save changes {course_id}: {e}")
+            return False
+
+    def save_message_record(self, course_id: str, message_id: int, kind: str, meta: dict = None):
+        """Enregistrer l'ID d'un message Telegram dans Firestore (ou local)."""
+        try:
+            record = {
+                'course_id': course_id,
+                'message_id': message_id,
+                'kind': kind,
+                'meta': meta or {},
+                'created_at': firestore.SERVER_TIMESTAMP if self.db else None
+            }
+            if self.db:
+                self.db.collection('courses').document(course_id).collection('messages').document().set(record)
+                return True
+            # local fallback
+            import os, json, time
+            os.makedirs('local_storage', exist_ok=True)
+            path = f"local_storage/messages_{course_id}.json"
+            arr = []
+            if os.path.exists(path):
+                try:
+                    with open(path,'r',encoding='utf-8') as f: arr = json.load(f)
+                except Exception: arr = []
+            record['created_at'] = time.time()
+            arr.append(record)
+            with open(path,'w',encoding='utf-8') as f: json.dump(arr,f,ensure_ascii=False,indent=2)
+            return True
+        except Exception as e:
+            self.logger.error(f"Erreur save message record {course_id}: {e}")
+            return False
+
+    def save_audit_event(self, event_type: str, data: dict):
+        """Enregistrer un évènement d'audit (ex: bigscan) avec métadonnées."""
+        try:
+            record = {
+                'type': event_type,
+                'data': data,
+                'created_at': firestore.SERVER_TIMESTAMP if self.db else None
+            }
+            if self.db:
+                self.db.collection('audits').document().set(record)
+                return True
+            # local fallback
+            import time
+            os.makedirs('local_storage', exist_ok=True)
+            path = 'local_storage/audits.json'
+            arr = []
+            if os.path.exists(path):
+                try:
+                    with open(path,'r',encoding='utf-8') as f: arr = json.load(f)
+                except Exception:
+                    arr = []
+            record['created_at'] = time.time()
+            arr.append(record)
+            with open(path,'w',encoding='utf-8') as f: json.dump(arr,f,ensure_ascii=False,indent=2)
+            return True
+        except Exception as e:
+            self.logger.warning(f"Audit event save failed {event_type}: {e}")
             return False
     
     def _save_local(self, course_id, content):

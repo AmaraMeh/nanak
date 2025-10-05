@@ -23,6 +23,12 @@ class TelegramNotifier:
         self.inline_state = {}
         # Nombre d'items par page pour navigation inline
         self.items_per_page = 10
+        if InlineKeyboardButton is None:
+            self.logger.warning("InlineKeyboard non disponible: les boutons seront remplacés par des commandes /nav <id> page.")
+        # Cooldown bigscan
+        self.last_bigscan_ts = 0
+        # Menu pagination state (simple)
+        self.menu_pages = ['main','more']
 
     def set_bot_ref(self, bot_ref):
         self.bot_ref = bot_ref
@@ -80,7 +86,6 @@ class TelegramNotifier:
             '/ping': self._cmd_ping,
             '/latest': self._cmd_latest_changes,
             '/config': self._cmd_show_config,
-            '/stopbot': self._cmd_stop_bot,
             '/inline': self._cmd_inline_paginate,
             '/inventory': self._cmd_inventory_course,
             '/versions': self._cmd_versions,
@@ -94,9 +99,13 @@ class TelegramNotifier:
             '/stats': self._cmd_stats,
             '/week': self._cmd_week,
             '/digest': self._cmd_digest_now,
+            '/menu': self._cmd_menu,
+            '/bigscan': self._cmd_bigscan,
+            '/lastfiles': self._cmd_last_files,
         }
-        # Étendre avec alias dynamiques
+        # Étendre avec alias dynamiques id + nom
         self._extend_dynamic_commands(commands)
+        self._extend_name_based_department_commands(commands)
 
         handler = commands.get(cmd)
         if handler:
@@ -112,22 +121,27 @@ class TelegramNotifier:
         await self._cmd_help(chat_id, args)
 
     async def _cmd_help(self, chat_id, args):
-        help_text = (
-            "🤖 <b>Commandes principales</b>\n"
-            "(Guide avancé: /advanced pour >100 commandes spécifiques)\n\n"
-            "/status /list /course /sections /activities /resources /files\n"
-            "/inventory /nav /inline /search /export /courses_count /uptime /ping\n"
-            "/config /setmode /delay /versions /about /rescan /rescan_course\n"
-            "/today /yesterday /last7 /update /files_send /stopbot\n"
-        )
-        await self._safe_send(chat_id, help_text)
+        lines = [
+            "🤖 <b>Commandes principales</b>",
+            "Base: /status /list /course /inventory /search /export /uptime /ping",
+            "Navigation: /sections /activities /resources /files /nav /inline",
+            "Maintenance: /rescan /rescan_course /bigscan /versions /config /delay /setmode",
+            "Historique: /latest /week /digest",
+            "Temps: /today /yesterday /last7",
+            "Fichiers: /files_send",
+            "Départements ID: /advanced (d<ID> / dt<ID> / dy<ID> / d7<ID>)",
+            "Départements NOM: /dep_<slug> (_today _yesterday _last7)",
+            "Exemple: /dep_psychologie_et_d_orthophonie_today",
+            "Voir: COMMANDS_REFERENCE.txt & GUIDE_COMPLET.txt"
+        ]
+        for chunk in self._paginate('\n'.join(lines)):
+            await self._safe_send(chat_id, chunk)
 
     async def _cmd_advanced(self, chat_id, args):
-        # Génère liste alias département: /d<id> (snapshot), /dt<id> today, /dy<id> yesterday, /d7<id> last7
         lines = ["📘 <b>Commandes Département</b>"]
         for space in Config.MONITORED_SPACES:
             cid = space['id']
-            base = f"/d{cid}"  # snapshot rapide
+            base = f"/d{cid}"
             lines.append(f"{base} | /dt{cid} | /dy{cid} | /d7{cid}")
         lines.append("Format: /d<ID>=snapshot, /dt<ID>=today, /dy<ID>=yesterday, /d7<ID>=7 jours")
         txt = '\n'.join(lines)
@@ -135,7 +149,6 @@ class TelegramNotifier:
             await self._safe_send(chat_id, chunk)
 
     def _extend_dynamic_commands(self, commands: dict):
-        # Ajouter alias dynamiques département
         for space in Config.MONITORED_SPACES:
             cid = space['id']
             commands[f"/d{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_course_details(chat_id, [_cid])
@@ -143,6 +156,25 @@ class TelegramNotifier:
             commands[f"/dy{cid}"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 2, "Hier", only_day_offset=1)
             commands[f"/d7{cid}"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 7, "7 jours")
         commands['/advanced'] = self._cmd_advanced
+
+    def _extend_name_based_department_commands(self, commands: dict):
+        import re
+        seen = set()
+        for space in Config.MONITORED_SPACES:
+            cid = space['id']
+            slug = space['name'].lower()
+            slug = re.sub(r"affichage|département|departement|d'|du|des|de|\bl'|\ble\b|\bla\b|\s+", " ", slug)
+            slug = re.sub(r"[^a-z0-9]+", "_", slug).strip('_')
+            if not slug:
+                continue
+            base = f"/dep_{slug}"[:60]
+            if base in seen:
+                continue
+            seen.add(base)
+            commands[base] = lambda chat_id, args, _cid=cid: self._cmd_course_details(chat_id, [_cid])
+            commands[base+"_today"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 1, "Aujourd'hui")
+            commands[base+"_yesterday"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 2, "Hier", only_day_offset=1)
+            commands[base+"_last7"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 7, "7 jours")
 
     async def _cmd_status(self, chat_id, args):
         if not self.bot_ref:
@@ -306,7 +338,35 @@ class TelegramNotifier:
         await self._safe_send(chat_id, "🏓 Pong")
 
     async def _cmd_latest_changes(self, chat_id, args):
-        await self._safe_send(chat_id, "(Non implémenté: historique des derniers changements)")
+        logs = self.bot_ref.firebase.get_changes_since(7)
+        entries = []
+        from datetime import datetime as _dt
+        for entry in logs:
+            course_id = entry.get('course_id')
+            cname = next((s['name'] for s in Config.MONITORED_SPACES if s['id']==course_id), course_id)
+            ts = entry.get('timestamp')
+            for ch in entry.get('changes', []):
+                t = ch.get('type','')
+                if any(k in t for k in ['added','renamed']):
+                    title = ch.get('activity_title') or ch.get('resource_title') or ch.get('file_name') or ch.get('section_title') or 'Nouvel élément'
+                    entries.append((ts, cname, t, title))
+        def _parse(ts):
+            if isinstance(ts,str):
+                try:
+                    return _dt.fromisoformat(ts.replace('Z',''))
+                except:
+                    return _dt.min
+            return _dt.min
+        entries.sort(key=lambda x: _parse(x[0]), reverse=True)
+        lines = ["🕒 <b>Derniers ajouts / renommages</b>"]
+        for e in entries[:30]:
+            dtv = _parse(e[0])
+            dt_s = dtv.strftime('%d/%m %H:%M') if dtv.year > 1900 else ''
+            lines.append(f"• {self._escape(e[1])} — {self._escape(e[3])} ({e[2]}) {dt_s}")
+        if len(lines)==1:
+            lines.append("Aucun changement récent")
+        for chunk in self._paginate('\n'.join(lines)):
+            await self._safe_send(chat_id, chunk)
 
     async def _cmd_show_config(self, chat_id, args):
         from config import Config as C
@@ -315,10 +375,7 @@ class TelegramNotifier:
         )
         await self._safe_send(chat_id, msg)
 
-    async def _cmd_stop_bot(self, chat_id, args):
-        if self.bot_ref:
-            self.bot_ref.stop()
-            await self._safe_send(chat_id, "🛑 Bot arrêté")
+    # (Commande /stopbot supprimée pour empêcher un arrêt manuel accidentel)
 
     async def _cmd_inline_paginate(self, chat_id, args):
         if not args: return await self._safe_send(chat_id, "Usage: /inline <id>")
@@ -541,9 +598,43 @@ class TelegramNotifier:
                     caption = f"{course_name or course_id}\n{f}"[:100]
                     with open(full, 'rb') as fh:
                         await self.bot.send_document(chat_id=self.chat_id, document=fh, filename=f, caption=caption)
+                    # Enregistrer dans contexte bigscan si actif
+                    if self.bot_ref and getattr(self.bot_ref, 'current_bigscan', None) is not None:
+                        try:
+                            self.bot_ref.current_bigscan.setdefault('files_sent', set()).add(f)
+                        except Exception:
+                            pass
                     await asyncio.sleep(0.8)
                 except Exception as e:
                     self.logger.warning(f"Envoi fichier échoué {f}: {e}")
+
+    async def send_bigscan_files_summary(self, ctx: dict):
+        """Envoyer un résumé final après bigscan (nombre de cours, fichiers envoyés)."""
+        try:
+            if not self.chat_id:
+                return
+            files_count = len(ctx.get('files_sent', []))
+            courses = ctx.get('courses', [])
+            start = ctx.get('start')
+            end = ctx.get('end')
+            # Top 5 cours par nombre de fichiers (si disponibles)
+            top_lines = []
+            cf = ctx.get('course_file_counts') or {}
+            if cf:
+                top_sorted = sorted(cf.items(), key=lambda x: x[1], reverse=True)[:5]
+                for cid, cnt in top_sorted:
+                    cname = next((s['name'] for s in Config.MONITORED_SPACES if s['id']==cid), cid)
+                    top_lines.append(f"• {self._escape(cname)}: {cnt} fichiers")
+            msg = ["📦 <b>Big Scan terminé</b>", f"Cours inventoriés: {len(courses)}", f"Fichiers envoyés: {files_count}"]
+            if top_lines:
+                msg.append("<b>Top fichiers:</b>")
+                msg.extend(top_lines)
+            msg.append(f"Début: {start}")
+            msg.append(f"Fin: {end}")
+            msg = '\n'.join(msg)
+            await self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
+        except Exception as e:
+            self.logger.warning(f"Résumé bigscan échoué: {e}")
 
     # ================= Inline Callback Handling =================
     async def _handle_callback_query(self, cq):
@@ -567,6 +658,36 @@ class TelegramNotifier:
                     await self._send_recent_changes_for_course(cq.message.chat_id, cid, 7, "7 derniers jours")
             except Exception as e:
                 self.logger.warning(f"Callback dep parse error: {e}")
+        elif data.startswith('bigscan:confirm:'):
+            choice = data.split(':',2)[2]
+            if choice == 'yes':
+                await self._launch_bigscan(cq.message.chat_id)
+            else:
+                await self._safe_send(cq.message.chat_id, "❌ Big scan annulé")
+        elif data.startswith('menu:'):
+            # menu:<action>
+            action = data.split(':',1)[1]
+            mapping = {
+                'status': '/status',
+                'today': '/today',
+                'week': '/week',
+                'latest': '/latest',
+                'stats': '/stats',
+                'advanced': '/advanced'
+            }
+            if action.startswith('page:'):
+                page = action.split(':',1)[1]
+                await self._send_menu(cq.message.chat_id, page)
+            elif action == 'bigscan':
+                await self._cmd_bigscan(cq.message.chat_id, [])
+            elif action == 'lastfiles':
+                await self._cmd_last_files(cq.message.chat_id, [])
+            elif action == 'bigscanstatus':
+                await self._cmd_bigscan_status(cq.message.chat_id, [])
+            else:
+                cmd = mapping.get(action)
+                if cmd:
+                    await self._handle_command(cmd, cq.message.chat_id)
 
     async def _send_inline_page(self, chat_id, cid, items, page):
         state_key = f"{cid}"
@@ -604,6 +725,151 @@ class TelegramNotifier:
         if nav_row:
             buttons.append(nav_row)
         return InlineKeyboardMarkup(buttons)
+
+    async def _cmd_menu(self, chat_id, args):
+        page = args[0] if args else 'main'
+        await self._send_menu(chat_id, page)
+
+    async def _send_menu(self, chat_id, page='main'):
+        if not InlineKeyboardButton:
+            return await self._safe_send(chat_id, "Inline non disponible.")
+        # Status indicator: green if last cycle no notifications (quiet) OR red if there were notifications? (inverse request) -> per demande: 🟢 aucun changement, 🔴 changements.
+        cycle_notifs = self.bot_ref.monitor.last_notifications_cycle() if self.bot_ref else 0
+        status_icon = '🔴' if cycle_notifs > 0 else '🟢'
+        if page == 'main':
+            rows = [
+                [InlineKeyboardButton(f'{status_icon} Statut', callback_data='menu:status'), InlineKeyboardButton('📰 Aujourd\'hui', callback_data='menu:today')],
+                [InlineKeyboardButton('🕒 Derniers', callback_data='menu:latest'), InlineKeyboardButton('🗓️ 7 jours', callback_data='menu:week')],
+                [InlineKeyboardButton('📈 Stats', callback_data='menu:stats'), InlineKeyboardButton('🧭 Départements', callback_data='menu:advanced')],
+                [InlineKeyboardButton('➕ Plus', callback_data='menu:page:more')]
+            ]
+            txt = "Menu principal"
+        else:  # more page
+            rows = [
+                [InlineKeyboardButton('📦 Big Scan', callback_data='menu:bigscan'), InlineKeyboardButton('� Derniers Fichiers', callback_data='menu:lastfiles')],
+                [InlineKeyboardButton('📚 Inventaire', callback_data='menu:latest'), InlineKeyboardButton('📊 Statut BigScan', callback_data='menu:bigscanstatus')],
+                [InlineKeyboardButton('⬅️ Retour', callback_data='menu:page:main')]
+            ]
+            txt = "Menu avancé"
+        # Map special action bigscan
+        # Re-route 'menu:bigscan'
+        # We'll hijack callback: treat as command
+        for r in rows:
+            for b in r:
+                if b.callback_data == 'menu:bigscan':
+                    # Accept as menu:bigscan callback branch in handler
+                    pass
+        kb = InlineKeyboardMarkup(rows)
+        await self.bot.send_message(chat_id=chat_id, text=txt, reply_markup=kb)
+
+    async def _cmd_bigscan(self, chat_id, args):
+        from time import time as _time
+        cooldown = Config.BIGSCAN_COOLDOWN_MINUTES * 60
+        now = _time()
+        remaining = (self.last_bigscan_ts + cooldown) - now
+        if remaining > 0:
+            mins = int(remaining // 60)
+            secs = int(remaining % 60)
+            return await self._safe_send(chat_id, f"⏳ Big scan en cooldown. Réessaie dans {mins}m{secs}s")
+        # Demander confirmation
+        if not InlineKeyboardButton:
+            return await self._safe_send(chat_id, "Confirmez en répondant: tapez /bigscan yes pour lancer" )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton('✅ Oui', callback_data='bigscan:confirm:yes'), InlineKeyboardButton('❌ Non', callback_data='bigscan:confirm:no')]
+        ])
+        await self.bot.send_message(chat_id=chat_id, text="⚠️ Lancer un BIG SCAN complet ?\nCela peut être long et télécharger beaucoup de fichiers.", reply_markup=kb)
+
+    async def _launch_bigscan(self, chat_id):
+        from time import time as _time
+        self.last_bigscan_ts = _time()
+        if not self.bot_ref:
+            return await self._safe_send(chat_id, "Bot ref indisponible")
+        self.bot_ref.trigger_big_scan()
+        await self._safe_send(chat_id, "🚀 Big scan lancé (inventaire complet + fichiers si activés)")
+
+    async def _cmd_last_files(self, chat_id, args):
+        """Lister les derniers fichiers ajoutés sur 7 jours."""
+        try:
+            logs = self.bot_ref.firebase.get_changes_since(7)
+            records = []
+            from datetime import datetime as _dt
+            for entry in logs:
+                cid = entry.get('course_id')
+                ts = entry.get('timestamp')
+                for ch in entry.get('changes', []):
+                    if ch.get('type') == 'file_added':
+                        records.append((ts, cid, ch.get('file_name')))
+            def _p(ts):
+                if isinstance(ts, str):
+                    try:
+                        return _dt.fromisoformat(ts.replace('Z',''))
+                    except Exception:
+                        return _dt.min
+                return _dt.min
+            records.sort(key=lambda x: _p(x[0]), reverse=True)
+            lines = ["📄 <b>Derniers fichiers ajoutés</b>"]
+            for r in records[:40]:
+                cname = next((s['name'] for s in Config.MONITORED_SPACES if s['id']==r[1]), r[1])
+                dtv = _p(r[0])
+                dt_s = dtv.strftime('%d/%m %H:%M') if dtv.year>1900 else ''
+                lines.append(f"• {self._escape(r[2])} — {self._escape(cname)} {dt_s}")
+            if len(lines) == 1:
+                lines.append("Aucun fichier récent")
+            for chunk in self._paginate('\n'.join(lines)):
+                await self._safe_send(chat_id, chunk)
+        except Exception as e:
+            await self._safe_send(chat_id, f"Erreur derniers fichiers: {e}")
+
+    async def _cmd_bigscan_status(self, chat_id, args):
+        ctx = getattr(self.bot_ref, 'current_bigscan', None) if self.bot_ref else None
+        if not ctx:
+            return await self._safe_send(chat_id, "Aucun big scan en cours")
+        await self.send_bigscan_progress(ctx, auto=False)
+
+    async def send_bigscan_progress(self, ctx: dict, auto: bool=False):
+        """Envoyer un message de progression bigscan (estimation temps restant)."""
+        try:
+            if not self.chat_id:
+                return
+            done = len(ctx.get('courses', []))
+            total = ctx.get('total_courses') or max(done,1)
+            percent = (done/total)*100
+            avg = 0
+            ct = ctx.get('course_times') or []
+            if ct:
+                avg = sum(ct)/len(ct)
+            remaining_courses = max(0, total - done)
+            import math
+            eta_seconds = remaining_courses * avg if avg else 0
+            mins = int(eta_seconds // 60)
+            secs = int(eta_seconds % 60)
+            bar_units = 20
+            filled = int((percent/100)*bar_units)
+            bar = '█'*filled + '░'*(bar_units-filled)
+            header = "⏳ Progression Big Scan" if not auto else "⏱️ Maj Progression Big Scan"
+            lines = [f"{header}", f"{bar} {percent:.1f}%", f"Cours: {done}/{total}"]
+            if eta_seconds:
+                lines.append(f"Estimation restante: {mins}m{secs:02d}s")
+            if ctx.get('files_sent'):
+                lines.append(f"Fichiers envoyés: {len(ctx['files_sent'])}")
+            txt = '\n'.join(lines)
+            await self._safe_send(self.chat_id, txt)
+        except Exception as e:
+            self.logger.debug(f"progress send err: {e}")
+
+    async def send_initial_completion_message(self, elapsed_seconds: float, courses_count: int):
+        try:
+            if not self.chat_id:
+                return
+            mins = int(elapsed_seconds // 60)
+            secs = int(elapsed_seconds % 60)
+            txt = ("✅ <b>Scan initial complet terminé</b>\n"
+                   f"Cours: {courses_count}\n"
+                   f"Durée: {mins}m{secs:02d}s\n"
+                   f"Vous recevrez désormais uniquement les mises à jour.")
+            await self._safe_send(self.chat_id, txt)
+        except Exception as e:
+            self.logger.debug(f"initial completion msg err: {e}")
     
     async def get_chat_id(self):
         """Obtenir l'ID du chat pour les messages privés"""
@@ -628,22 +894,31 @@ class TelegramNotifier:
         try:
             if not self.chat_id:
                 await self.get_chat_id()
-            
             if not self.chat_id:
                 self.logger.error("Impossible d'envoyer la notification: chat ID non disponible")
                 return False
-            
+            sent_ids = []
             if is_initial_scan:
-                # NE RIEN ENVOYER PAR ÉLÉMENT: construire un bloc final unique
-                await self._send_deferred_initial_inventory(course_name, course_url, changes)
+                msg_ids = await self._send_deferred_initial_inventory(course_name, course_url, changes)
+                if isinstance(msg_ids, list):
+                    sent_ids.extend(msg_ids)
             else:
-                # Changements normaux (diff incrémental)
-                message = self._build_message(course_name, course_url, changes, is_initial_scan)
-                await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode='HTML', disable_web_page_preview=True)
-            
+                chunks = self._build_messages_split(course_name, course_url, changes)
+                for part in chunks:
+                    msg = await self.bot.send_message(chat_id=self.chat_id, text=part, parse_mode='HTML', disable_web_page_preview=True)
+                    sent_ids.append(msg.message_id)
+                    await asyncio.sleep(0.15)
+            if self.bot_ref and getattr(self.bot_ref, 'firebase', None):
+                for mid in sent_ids:
+                    try:
+                        self.bot_ref.firebase.save_message_record(course_url.split('=')[-1], mid, 'notification', {
+                            'initial': is_initial_scan,
+                            'changes_count': len(changes)
+                        })
+                    except Exception:
+                        pass
             self.logger.info(f"Notification envoyée pour le cours: {course_name}")
             return True
-            
         except TelegramError as e:
             self.logger.error(f"Erreur Telegram lors de l'envoi de la notification: {str(e)}")
             return False
@@ -665,11 +940,68 @@ class TelegramNotifier:
                     files += len(a.get('files', []))
                 for r in s.get('resources', []):
                     files += len(r.get('files', []))
-            msg = (f"✅ <b>Inventaire terminé</b> — {self._escape(course_name)}\n"
-                   f"Sections: {len(sections)} | Activités: {acts} | Ressources: {res} | Fichiers: {files}")
-            await self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
+                    msg = (f"✅ <b>Inventaire terminé</b> — {self._escape(course_name)}\n"
+                           f"Sections: {len(sections)} | Activités: {acts} | Ressources: {res} | Fichiers: {files}")
+                    msg = await self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
+                    if self.bot_ref and getattr(self.bot_ref, 'firebase', None):
+                        try:
+                            self.bot_ref.firebase.save_message_record(course_id, msg.message_id, 'dept_summary', {
+                                'sections': len(sections), 'activities': acts, 'resources': res, 'files': files
+                            })
+                        except Exception:
+                            pass
+                if self.bot_ref and getattr(self.bot_ref, 'firebase', None):
+                    try:
+                        self.bot_ref.firebase.save_message_record(course_id, msg.message_id, 'dept_summary', {
+                            'sections': len(sections), 'total_items': total_items
+                        })
+                    except Exception:
+                        pass
         except Exception as e:
             self.logger.warning(f"dept complete msg échoué {course_id}: {e}")
+
+    async def send_course_no_update(self, course_name: str, course_id: str):
+        """Envoyer un message indiquant qu'aucune mise à jour n'a été trouvée pour ce département au cycle courant."""
+        try:
+            if not self.chat_id:
+                return
+            msg = f"ℹ️ Pas de mise à jour pour <b>{self._escape(course_name)}</b> ce cycle"
+            sent = await self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
+            if self.bot_ref and getattr(self.bot_ref, 'firebase', None):
+                try:
+                    self.bot_ref.firebase.save_message_record(course_id, sent.message_id, 'no_update', {
+                        'course': course_name,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                except Exception:
+                    pass
+        except Exception as e:
+            self.logger.warning(f"no-update msg échoué {course_id}: {e}")
+
+    async def send_cycle_update_summary(self, changed: list, unchanged: list):
+        """Envoyer un résumé unique du cycle: départements avec et sans mise à jour."""
+        try:
+            if not self.chat_id:
+                return
+            lines = ["🌀 <b>Résumé du cycle</b>"]
+            if changed:
+                lines.append("\n✅ <b>Mises à jour:</b>")
+                for cid, name in changed:
+                    lines.append(f"• {self._escape(name)}")
+            if unchanged:
+                lines.append("\nℹ️ <b>Sans changement:</b>")
+                # Limiter si trop long
+                max_list = 60
+                for cid, name in unchanged[:max_list]:
+                    lines.append(f"• {self._escape(name)}")
+                if len(unchanged) > max_list:
+                    lines.append(f"… (+{len(unchanged)-max_list} autres)")
+            if len(lines) == 1:
+                lines.append("Aucune donnée sur le cycle")
+            for chunk in self._paginate('\n'.join(lines)):
+                await self._safe_send(self.chat_id, chunk)
+        except Exception as e:
+            self.logger.warning(f"cycle summary échoué: {e}")
 
     async def send_initial_global_summary(self, contents: dict):
         """Envoyer un résumé global après la fin du premier scan (sections totales, fichiers, etc.)."""
@@ -881,9 +1213,11 @@ class TelegramNotifier:
         footer = f"✅ Fin inventaire pour {self._escape(course_name)}"
         parts.append(footer)
         full_text = '\n'.join(parts)
-        # Paginer si nécessaire
+        sent_ids = []
         for chunk in self._paginate(full_text):
-            await self.bot.send_message(chat_id=self.chat_id, text=chunk, parse_mode='HTML', disable_web_page_preview=True)
+            msg = await self.bot.send_message(chat_id=self.chat_id, text=chunk, parse_mode='HTML', disable_web_page_preview=True)
+            sent_ids.append(msg.message_id)
+        return sent_ids
 
     def _build_detailed_initial_sections(self, changes: list) -> list:
         """Construire des messages détaillés listant chaque section et son contenu."""
@@ -972,7 +1306,24 @@ class TelegramNotifier:
 
     async def _safe_send(self, chat_id: int, text: str, parse_mode: str = 'HTML'):
         try:
-            await self.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode, disable_web_page_preview=True)
+            # Split proactively if too long
+            if len(text) > 3900:
+                for chunk in self._paginate(text):
+                    await self._safe_send(chat_id, chunk, parse_mode=parse_mode)
+                return
+            try:
+                await self.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode, disable_web_page_preview=True)
+            except TelegramError as te:
+                # Retry plain text if formatting or length error
+                if any(k in str(te).lower() for k in ['unsupported start tag','parse entities','too long']):
+                    clean = self._strip_html(text)[:4090]
+                    if len(clean) > 3900:
+                        for chunk in self._paginate(clean):
+                            await self.bot.send_message(chat_id=chat_id, text=chunk)
+                    else:
+                        await self.bot.send_message(chat_id=chat_id, text=clean)
+                else:
+                    raise
         except Exception as e:
             self.logger.error(f"Envoi message échoué: {e}")
     
@@ -1066,6 +1417,10 @@ class TelegramNotifier:
         """Obtenir l'heure actuelle formatée"""
         from datetime import datetime
         return datetime.now().strftime("%d/%m/%Y à %H:%M:%S")
+
+    def _strip_html(self, text: str) -> str:
+        import re
+        return re.sub(r'<[^>]+>', '', text)
     
     async def send_startup_message(self, monitor=None):
         """Envoyer un message de démarrage du bot"""

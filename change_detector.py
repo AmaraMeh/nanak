@@ -324,6 +324,7 @@ class ChangeDetector:
                     'type': 'file_added',
                     'file_name': name,
                     'parent_title': parent_title,
+                    'file_url': file.get('url'),
                     'file_date': datetime.now().isoformat(),
                     'message': f'Nouveau fichier ajouté: {name}',
                     'details': f"Dans: {parent_title}\nURL: {file.get('url', 'N/A')}\nPublié (détecté) : {datetime.now().strftime('%d/%m/%Y %H:%M')}"

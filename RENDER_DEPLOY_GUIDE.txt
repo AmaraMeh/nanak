@@ -91,6 +91,8 @@ Build command:
 Start command:
   python run_bot.py
 
+Mise à jour: vous pouvez définir CHECK_INTERVAL_MINUTES=5 pour une surveillance toutes les 5 minutes (défaut actuel dans le code). Le bot détecte les redémarrages et n'envoie plus l'inventaire initial si des données existent déjà.
+
 Aucune autre préparation nécessaire. Render installe Python automatiquement.
 
 -----------------------------------------------------------------
@@ -122,7 +124,7 @@ Si vous voulez un Web Service (monitoring extérieur) :
        if bot_task:
            bot_task.cancel()
 
-   @app.get("/health")
+  @app.get("/health")
    async def health():
        return {"status": "ok", "scans": bot.monitor.stats.get("total_scans", 0)}
 
@@ -230,7 +232,8 @@ Start Command:
 2. Lire logs: connexion eLearning réussie / début premier scan.
 3. Réception du message de démarrage Telegram.
 4. À la fin: message Résumé Initial Global.
-5. Attendre 15 minutes: soit changements, soit message "Aucun nouveau changement".
+5. Attendre 5 minutes (si CHECK_INTERVAL_MINUTES=5) : soit changements, soit message "Aucun nouveau changement".
+6. Redémarrez le service → vérifier qu'il NE renvoie PAS tout l'inventaire (comportement anti-spam de redémarrage). Utilisez /bigscan si vous voulez forcer un nouvel inventaire complet.
 
 -----------------------------------------------------------------
 17. Extensions futures sur Render
@@ -240,4 +243,10 @@ Start Command:
 - Mettre en place un Web Service minimal pour monitoring public (/health, /stats JSON).
 
 -----------------------------------------------------------------
+Appendice: Commande /bigscan
+--------------------------------
+Utilisez /bigscan pour lancer un inventaire complet (équivalent premier scan) même après un redémarrage.
+
+Voir aussi: KEEP_ONLINE_RENDER.txt pour un mémo rapide 24/7.
+
 Fin du guide.

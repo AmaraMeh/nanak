@@ -27,7 +27,8 @@ class Config:
     }
     
     # Configuration du bot
-    CHECK_INTERVAL_MINUTES = 15
+    # Intervalle de scan en minutes (par défaut 5 pour surveillance rapprochée)
+    CHECK_INTERVAL_MINUTES = int(os.getenv('CHECK_INTERVAL_MINUTES', '5'))
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
     # Options d'organisation et de notifications
@@ -44,6 +45,8 @@ class Config:
     # Fournisseur base de données: 'firebase' (par défaut) ou 'supabase' (futur)
     DB_PROVIDER = os.getenv('DB_PROVIDER', 'firebase').lower()
     COURSE_VERSIONING = os.getenv('COURSE_VERSIONING', 'true').lower() == 'true'
+    # Cooldown minutes between manual /bigscan calls
+    BIGSCAN_COOLDOWN_MINUTES = int(os.getenv('BIGSCAN_COOLDOWN_MINUTES', '30'))
     
     # Espaces à surveiller
     MONITORED_SPACES = [

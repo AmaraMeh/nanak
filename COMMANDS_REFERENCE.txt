@@ -1,0 +1,102 @@
+COMMANDS REFERENCE (Usage + Examples)
+=====================================
+
+Base Commands
+-------------
+/status            -> Show runtime status (firebase, initial scan time, interval)
+/list              -> List monitored department IDs and names
+/course <id>       -> Show snapshot counts for a department
+/inventory <id>    -> Hierarchical quick navigation snapshot
+/search <term>     -> Full-text search in titles across all departments
+/export <id>       -> Partial JSON export of the in-memory snapshot
+/courses_count     -> Number of monitored departments
+/uptime            -> Number of scan cycles performed
+/ping              -> Connectivity test (Pong)
+/about             -> Short about text
+
+Navigation / Structure
+----------------------
+/sections <id>     -> List section titles
+/activities <id>   -> List activity titles
+/resources <id>    -> List resource titles
+/files <id>        -> List detected file entries (activity/resource)
+/nav <id>          -> Compact navigation preview (first items per section)
+/inline <id>       -> Interactive paginated navigation (inline buttons if supported)
+
+Scanning & Maintenance
+----------------------
+/rescan            -> Trigger a global on-demand diff scan
+/rescan_course <id>-> Trigger a single department scan
+/bigscan           -> Force a full inventory style scan (re-sends inventory)
+/setmode grouped|separate -> Switch initial inventory rendering style for future bigscan
+/delay <seconds>   -> Adjust delay between streamed messages (0.1 - 5.0)
+/config            -> Show core runtime configuration values
+/versions          -> Show component library versions (Python, requests, bs4)
+
+Temporal & History
+------------------
+/today             -> Summary of new additions today (all departments)
+/yesterday         -> Summary of previous-day additions
+/last7             -> Summary of additions in last 7 days
+/week              -> Aggregated change types counts over last 7 days
+/digest            -> On-demand daily digest (added/renamed)
+/latest            -> 30 most recent additions/renames across last 7 days
+
+Files
+-----
+/files_send <id>   -> Send previously downloaded files for that department (only collected during bigscan or when file download enabled)
+
+Statistics
+----------
+/stats             -> ASCII summary of cycles, successes, failures, notifications
+
+Department ID Shortcuts
+-----------------------
+/advanced          -> List of dynamic shortcuts per department ID:
+  /d<ID>  snapshot
+  /dt<ID> today additions
+  /dy<ID> yesterday additions
+  /d7<ID> last 7 days additions
+
+Department Name Shortcuts (Slug Form)
+-------------------------------------
+Format: /dep_<slug>, plus suffixes _today _yesterday _last7
+Slug construction: lowercase, remove stop words (affichage, departement, de, du, des, d'), non-alphanumerics -> underscore.
+Example Name: "Affichage Département de Psychologie et d'Orthophonie"
+Slug: psychologie_et_d_orthophonie
+Commands:
+  /dep_psychologie_et_d_orthophonie
+  /dep_psychologie_et_d_orthophonie_today
+  /dep_psychologie_et_d_orthophonie_yesterday
+  /dep_psychologie_et_d_orthophonie_last7
+
+Examples
+--------
+1) Get today's new items across all departments:
+   /today
+2) Show snapshot for department 20049:
+   /course 20049
+3) Quick search for 'examen':
+   /search examen
+4) Last 30 latest additions/renames:
+   /latest
+5) Force big inventory (with file sending if enabled):
+   /bigscan
+6) Department by slug (today):
+   /dep_psychologie_et_d_orthophonie_today
+
+Return Codes & Emojis
+---------------------
+📂 Section / 📋 Activity / 📚 Resource / 📄 File
+➕ Added / ➖ Removed / 🔁 Renamed / ✏️ Description changed / 📁 New file / 🗑️ File removed
+
+Limits & Splitting
+------------------
+Messages are automatically split below ~3900 chars. Multi-part notifications show (Part X/Y).
+
+Notes
+-----
+- Big initial inventory only runs automatically on the very first run when no persisted snapshots exist.
+- Subsequent restarts perform a silent baseline to avoid flooding.
+- /bigscan can always be invoked manually to re-send a full structured inventory.
+- Files are downloaded only during a bigscan (or if SEND_FILES_AS_DOCUMENTS=true at runtime).

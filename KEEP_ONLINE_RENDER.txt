@@ -1,0 +1,55 @@
+Guide: Garder le bot actif 24h/24 sur Render (gratuit)
+=====================================================
+
+Objectif: Assurer que le bot ne s'arrête pas et réalise un scan toutes les 5 minutes sans renvoyer le premier inventaire lors d'un redémarrage.
+
+1. Type de service recommandé
+-----------------------------
+Utiliser un Web Service (actuel) ou Worker. Le Web Service doit exposer un port (déjà fait via FastAPI si web_app.py) sinon Render pense que le process est bloqué.
+
+2. Variables d'environnement clés
+---------------------------------
+- CHECK_INTERVAL_MINUTES=5
+- INITIAL_SCAN_MODE=grouped (optionnel, réduit le flood)
+- SEND_NO_UPDATES_MESSAGE=true
+- MESSAGE_DELAY_SECONDS=0.3
+
+3. Redémarrages et persistance
+------------------------------
+Les contenus de cours sont sauvegardés localement (fallback) ou Firebase si configuré. Au redémarrage:
+- Le bot détecte qu'il existe déjà du contenu et n'envoie PAS de re-inventaire complet.
+- Il reprend les scans incrémentaux toutes les 5 minutes.
+
+4. Forcer un inventaire complet manuel
+--------------------------------------
+Commande: /bigscan
+Effet: Force un scan complet comme un "premier" scan avec inventaire global.
+
+5. Empêcher les arrêts involontaires
+------------------------------------
+- Ne pas utiliser /stopbot sauf besoin.
+- Le script de boucle principale ignore exceptions et continue.
+- Sur Render: activer Auto-Restart (par défaut) pour crash éventuel.
+
+6. Surveillance
+---------------
+- Vérifier /status sur Telegram.
+- Consulter logs Render pour 'Début de la vérification des cours'.
+
+7. Optimisations gratuites
+--------------------------
+- Maintenir le nombre de dépendances léger.
+- Ne pas télécharger des fichiers trop lourds (>50MB) pour éviter timeouts.
+- Purger périodiquement le dossier downloads/ si ajouté.
+
+8. Cas de spam HTML parse
+-------------------------
+Le bot fallback en texte brut si Telegram refuse une entité HTML.
+
+9. Mise à jour intervalle
+-------------------------
+Changer la fréquence via variable d'environnement CHECK_INTERVAL_MINUTES sans modifier le code.
+
+10. Résumé
+----------
+Le bot tourne en continu, scan toutes les 5 minutes, ne renvoie pas l'inventaire après un redémarrage, et propose /bigscan pour re-forcer un inventaire complet.

@@ -1,0 +1,179 @@
+GUIDE COMPLET DU BOT ELEARNING
+==============================
+
+1. Objectif
+-----------
+Surveiller en continu les espaces d'affichage (Moodle/eLearning) d'une liste de départements et notifier automatiquement sur Telegram toute modification : ajouts de sections, activités, ressources, fichiers, renommages et modifications de description.
+
+2. Cycle de Vie
+---------------
+Démarrage:
+- Vérifie si des snapshots de contenu existent déjà (Firebase ou fallback local).
+- Si aucun snapshot (premier lancement absolu): lance un BIG SCAN initial (inventaire complet) avec optionnel téléchargement des fichiers.
+- Sinon: effectue une baseline silencieuse (aucune notification) pour permettre des diffs propres ensuite.
+- Lance la boucle de polling Telegram (commandes) + planification périodique (intervalle configurable).
+
+Boucle de Scan:
+- À chaque intervalle (CHECK_INTERVAL_MINUTES): récupération du contenu actuel de chaque cours.
+- Détection des changements vs dernier snapshot persistant (Firebase ou local).
+- Émission d'une notification concise listant les changements et classification par type.
+- Mise à jour du snapshot persistant et en mémoire.
+- Si aucun changement et SEND_NO_UPDATES_MESSAGE=true: envoi d'un message "Aucun nouveau changement".
+
+3. Persistance
+--------------
+Provider: Firebase Firestore (par défaut) avec fallback local JSON.
+Structure Firestore:
+  courses/{course_id}/meta/current          -> snapshot courant (version + timestamp)
+  courses/{course_id}/versions/vN           -> historique des versions (si COURSE_VERSIONING=ON)
+  courses/{course_id}/changes/{auto_id}     -> logs de lots de changements (hash déduplication)
+  courses/{course_id}/messages/{auto_id}    -> trace des message_id Telegram envoyés
+
+Fallback Local (dossier local_storage/):
+  course_<id>.json              -> snapshot
+  changes_log_<id>_TS.json      -> logs de changements
+  messages_<id>.json            -> historique messages
+  changes_hashes.json           -> mémoire de hash pour dédup
+
+4. Détection de Changements
+---------------------------
+Types pris en charge:
+- section_added / section_removed / section_renamed
+- activity_added / activity_removed / activity_description_changed
+- resource_added / resource_removed
+- file_added (avec date de fichier) / file_removed
+- Inventaire initial: existing_section / existing_activity / existing_resource / existing_file
+
+Renommages:
+- Basé sur similarité (difflib) entre anciens et nouveaux titres; si similaire au-dessus d'un seuil, détecté comme rename plutôt que remove+add.
+
+5. Gestion des Fichiers
+-----------------------
+- Téléchargement conditionnel: activé uniquement pendant un bigscan (initial ou manuel via /bigscan) pour réduire charge et coûts réseau.
+- Stockage dans downloads/<course_id>/<section_slug>/.
+- Nom de fichier: parentTitle_hash_nomOriginal pour éviter collisions.
+- Taille max par fichier: 50 MB.
+
+6. Notifications Telegram
+-------------------------
+- Utilise Bot API (polling manuel).
+- Splitting automatique des messages > ~3900 caractères.
+- Inventaire initial: messages multi-part structurés (sections, activités, ressources, fichiers) puis résumé global.
+- Notifications incrémentales: liste numérotée avec emoji par type + date fichier si disponible.
+- Message ID enregistré (cours, type notification) pour traçabilité.
+
+7. Commandes Clés
+-----------------
+Voir COMMANDS_REFERENCE.txt pour liste complète + exemples.
+Catégories: base, navigation, maintenance, temporal, historique, statistiques, shortcuts ID & nom.
+
+8. Shortcuts Département
+------------------------
+- Par ID: /d<ID> /dt<ID> /dy<ID> /d7<ID>
+- Par nom (slug): /dep_<slug> + suffixes _today / _yesterday / _last7
+Construction slug: minuscules, suppression mots vides (affichage, departement, de, du, des, d'), normalisation -> underscores.
+
+9. Stratégie Anti-Flood
+-----------------------
+- Baseline silencieuse sur redémarrages.
+- Délai configurable entre messages stream (/delay).
+- Grouping ou streaming initial (INITIAL_SCAN_MODE=grouped|separate).
+- Pagination interne pour inline navigation.
+
+10. Fallback & Résilience
+-------------------------
+- Si Firebase indisponible: bascule automatique sur stockage local, indication dans /status (⚠️(local)).
+- Aucune commande /stopbot pour éviter arrêt involontaire; arrêt via signal système (SIGINT/SIGTERM).
+
+11. Paramètres (env/Config)
+---------------------------
+CHECK_INTERVAL_MINUTES       -> Intervalle minutes entre scans (défaut 5)
+INITIAL_SCAN_MODE            -> grouped | separate (présentation inventaire initial)
+INITIAL_SCAN_DETAIL_LEVEL    -> full | summary (niveau détail inventaire)
+SEND_FILES_AS_DOCUMENTS      -> true|false (envoi fichiers après bigscan)
+SEND_NO_UPDATES_MESSAGE      -> true|false (message cycle sans changement)
+COURSE_VERSIONING            -> true|false (sauvegarde versions successives)
+DB_PROVIDER                  -> firebase | supabase (supabase placeholder)
+
+12. Statistiques & Monitoring
+-----------------------------
+/statuts (état), /stats (ASCII summary), /uptime (nombre de scans).
+Monitor collecte: total_scans, notifications, erreurs récentes, réussite/échec par cours.
+
+13. Historique & Temporalité
+----------------------------
+/today /yesterday /last7 : résumés additions récentes.
+/week : histogramme des types sur 7 jours.
+/digest : digest quotidien additions/renommages.
+/latest : 30 derniers ajouts/renommages triés par timestamp.
+Filtrage post-premier scan pour éviter bruit de l'inventaire initial.
+
+14. Architecture Code
+---------------------
+main.py               -> Orchestration (planification, baseline/big scan, statut)
+telegram_notifier.py  -> Commandes + envoi notifications + splitting
+change_detector.py    -> Diff logique (ajouts/retraits/renommages)
+firebase_manager.py   -> Persistance structurée + fallback local + logs
+monitoring.py         -> Agrégation stats cycle
+config.py             -> Paramètres et liste MONITORED_SPACES
+
+15. Ajout d'un Nouveau Département
+----------------------------------
+- Ajouter un objet {name, url, id} dans Config.MONITORED_SPACES.
+- Redémarrer le bot: baseline (ou bigscan si tout premier run global) inclura ce cours.
+- Commandes dynamiques ID et slug générées automatiquement.
+
+16. Sécurité & Bonnes Pratiques
+-------------------------------
+- Conserver les secrets (TOKEN, credentials Firebase) hors dépôt public.
+- Limiter l'exposition des fichiers téléchargés (pas de distribution externe non contrôlée).
+- Nettoyage périodique possible des anciens logs et versions (à implémenter: pruning).
+
+17. Limitations Actuelles
+-------------------------
+- get_changes_since Firebase: retrieval simplifié (amélioration possible via requêtes sous-collection changes).
+- Pas d'auth pour endpoints web (si FastAPI activé) -> ajouter un token simple.
+- Pas de test unitaire fourni (suggestion: intégrer pytest pour le diff engine).
+- Pas encore de cooldown sur /bigscan (peut être ajouté: variable d'environnement BIGSCAN_COOLDOWN_MINUTES).
+
+18. Extension Future (Roadmap Indicative)
+----------------------------------------
+- Commande /msgids <id> pour lister messages envoyés liés à un cours.
+- Pruning automatique des versions > N.
+- Export CSV/Excel des changements récents.
+- Intégration Supabase (DB_PROVIDER=supabase) complète.
+- Web dashboard (FastAPI + templates) pour visualisation historique.
+
+19. Dépannage Rapide
+--------------------
+Symptôme: "Aucun contenu récupéré" -> vérifier credentials eLearning et accessibilité réseau.
+Symptôme: Messages "localement" au lieu de Firebase -> vérifier GOOGLE_APPLICATION_CREDENTIALS ou projectId.
+Symptôme: Pas de notifications après ajout réel -> vérifier intervalle, logs diff (hash dédup possible si contenu identique), redémarrer avec /bigscan pour réinitialiser référence.
+Symptôme: Erreur parse HTML Telegram -> fallback auto en texte brut (voir logs).
+
+20. Exemples de Flux
+--------------------
+Premier déploiement:
+1. Lancement -> Startup message
+2. Big scan initial -> Inventaire multi-messages + résumé global
+3. Toutes les 5 min -> scans incrémentaux -> notifications
+
+Ajout fichier nouveau:
+- Diff détecte file_added (avec date) -> notification inclut horodatage.
+
+Renommage section:
+- Diff détecte section_renamed -> notification avec emoji 🔁.
+
+21. Glossaire
+-------------
+Snapshot: état complet actuel d'un cours.
+Baseline silencieuse: capture initiale sans notifications.
+Bigscan: inventaire complet envoyé avec détails.
+Diff incrémental: liste des changements entre deux snapshots.
+
+22. Support & Logs
+------------------
+Consulter bot.log pour diagnostics (erreurs Firebase, parse, envois Telegram).
+Changer niveau log en modifiant logging.basicConfig dans main.py si besoin (DEBUG).
+
+Fin du guide.
