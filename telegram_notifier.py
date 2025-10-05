@@ -977,6 +977,68 @@ class TelegramNotifier:
                     pass
         except Exception as e:
             self.logger.warning(f"no-update msg échoué {course_id}: {e}")
+    
+    async def send_no_changes_message(self, course_name: str, course_id: str):
+        """Envoyer un message spécial indiquant qu'aucun changement significatif n'a été détecté."""
+        try:
+            if not self.chat_id:
+                return
+            
+            # Obtenir les statistiques du cours
+            snap = self.bot_ref.get_course_snapshot(course_id) if self.bot_ref else None
+            sections_count = 0
+            activities_count = 0
+            resources_count = 0
+            files_count = 0
+            
+            if snap:
+                sections = snap.get('sections', [])
+                sections_count = len(sections)
+                for section in sections:
+                    activities = section.get('activities', [])
+                    resources = section.get('resources', [])
+                    activities_count += len(activities)
+                    resources_count += len(resources)
+                    
+                    for activity in activities:
+                        files_count += len(activity.get('files', []))
+                    for resource in resources:
+                        files_count += len(resource.get('files', []))
+            
+            # Construire le message
+            msg_lines = [
+                "🟢 <b>Aucune mise à jour détectée</b>",
+                "",
+                f"📚 <b>Département:</b> {self._escape(course_name)}",
+                f"📊 <b>État actuel:</b>",
+                f"   • Sections: {sections_count}",
+                f"   • Activités: {activities_count}",
+                f"   • Ressources: {resources_count}",
+                f"   • Fichiers: {files_count}",
+                "",
+                "✅ <i>Le contenu est à jour - aucune modification significative détectée</i>",
+                f"⏰ <i>Vérifié le {self._get_current_time()}</i>"
+            ]
+            
+            msg = '\n'.join(msg_lines)
+            sent = await self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
+            
+            # Enregistrer le message
+            if self.bot_ref and getattr(self.bot_ref, 'firebase', None):
+                try:
+                    self.bot_ref.firebase.save_message_record(course_id, sent.message_id, 'no_changes', {
+                        'course': course_name,
+                        'sections': sections_count,
+                        'activities': activities_count,
+                        'resources': resources_count,
+                        'files': files_count,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            self.logger.warning(f"no-changes msg échoué {course_id}: {e}")
 
     async def send_cycle_update_summary(self, changed: list, unchanged: list):
         """Envoyer un résumé unique du cycle: départements avec et sans mise à jour."""

@@ -26,7 +26,10 @@ class ChangeDetector:
         section_changes = self._compare_sections(old_sections, new_sections)
         changes.extend(section_changes)
         
-        return changes
+        # Filtrer les changements pour ne garder que les vrais changements
+        meaningful_changes = self._filter_meaningful_changes(changes)
+        
+        return meaningful_changes
     
     def _extract_all_existing_content(self, content: Dict) -> List[Dict]:
         """Extraire tout le contenu existant pour le premier scan"""
@@ -119,24 +122,37 @@ class ChangeDetector:
         old_sections_dict = {section['title']: section for section in old_sections}
         new_sections_dict = {section['title']: section for section in new_sections}
         
-        # Détection des renommages potentiels via similarité
+        # Détection des renommages potentiels via similarité avec seuil plus élevé
         unmatched_old = set(old_sections_dict.keys())
         unmatched_new = set(new_sections_dict.keys())
         rename_pairs = []  # (old_title, new_title)
+        
         for old_title in list(unmatched_old):
             best_match = None
             best_ratio = 0.0
             for new_title in list(unmatched_new):
-                ratio = difflib.SequenceMatcher(None, old_title, new_title).ratio()
-                if ratio > 0.6 and ratio > best_ratio:  # seuil empirique
+                # Normaliser les chaînes pour une meilleure comparaison
+                old_normalized = self._normalize_for_comparison(old_title)
+                new_normalized = self._normalize_for_comparison(new_title)
+                ratio = difflib.SequenceMatcher(None, old_normalized, new_normalized).ratio()
+                # Seuil élevé pour détecter les renommages
+                if ratio > 0.8 and ratio > best_ratio:
                     best_ratio = ratio
                     best_match = new_title
+            
+            # Vérifier que c'est vraiment un renommage et pas juste un changement cosmétique
             if best_match and old_title != best_match:
-                rename_pairs.append((old_title, best_match, best_ratio))
-                unmatched_old.discard(old_title)
-                unmatched_new.discard(best_match)
+                if self._is_significant_rename(old_title, best_match):
+                    # C'est un vrai renommage
+                    rename_pairs.append((old_title, best_match, best_ratio))
+                    unmatched_old.discard(old_title)
+                    unmatched_new.discard(best_match)
+                else:
+                    # C'est un changement cosmétique, on l'ignore complètement
+                    unmatched_old.discard(old_title)
+                    unmatched_new.discard(best_match)
 
-        # Sections renommées
+        # Sections renommées (seulement si c'est significatif)
         for old_title, new_title, ratio in rename_pairs:
             changes.append({
                 'type': 'section_renamed',
@@ -147,25 +163,27 @@ class ChangeDetector:
                 'details': f'Similarité {ratio:.2f} | Ancien résumé: {self._get_section_summary(old_sections_dict[old_title])} | Nouveau résumé: {self._get_section_summary(new_sections_dict[new_title])}'
             })
 
-        # Sections ajoutées (non mappées)
+        # Sections ajoutées (non mappées) - seulement si elles ont du contenu
         for title in unmatched_new:
             section = new_sections_dict[title]
-            changes.append({
-                'type': 'section_added',
-                'section_title': title,
-                'message': f'Nouvelle section ajoutée: {title}',
-                'details': self._get_section_summary(section)
-            })
+            if self._has_meaningful_content(section):
+                changes.append({
+                    'type': 'section_added',
+                    'section_title': title,
+                    'message': f'Nouvelle section ajoutée: {title}',
+                    'details': self._get_section_summary(section)
+                })
         
-        # Sections supprimées (non mappées)
+        # Sections supprimées (non mappées) - seulement si elles avaient du contenu
         for title in unmatched_old:
             section = old_sections_dict[title]
-            changes.append({
-                'type': 'section_removed',
-                'section_title': title,
-                'message': f'Section supprimée: {title}',
-                'details': self._get_section_summary(section)
-            })
+            if self._has_meaningful_content(section):
+                changes.append({
+                    'type': 'section_removed',
+                    'section_title': title,
+                    'message': f'Section supprimée: {title}',
+                    'details': self._get_section_summary(section)
+                })
         
         # Sections modifiées (ignorer celles qui sont renommées -> prendre le nouveau titre uniquement)
         processed_titles = {new for _, new, _ in rename_pairs}
@@ -362,3 +380,185 @@ class ChangeDetector:
         desc = resource.get('description', '')
         desc_preview = desc[:100] + '...' if len(desc) > 100 else desc
         return f"Fichiers: {files_count}\nDescription: {desc_preview}"
+    
+    def _is_significant_rename(self, old_title: str, new_title: str) -> bool:
+        """Vérifier si un renommage est significatif (pas juste cosmétique)"""
+        import re
+        
+        # Ignorer les changements de casse uniquement
+        if old_title.lower() == new_title.lower():
+            return False
+        
+        # Ignorer les changements d'espaces uniquement
+        if old_title.replace(' ', '') == new_title.replace(' ', ''):
+            return False
+        
+        # Ignorer les changements de ponctuation uniquement
+        old_clean = re.sub(r'[^\w\s]', '', old_title.lower())
+        new_clean = re.sub(r'[^\w\s]', '', new_title.lower())
+        if old_clean == new_clean:
+            return False
+        
+        # Ignorer les changements de formatage HTML
+        old_no_html = re.sub(r'<[^>]+>', '', old_title)
+        new_no_html = re.sub(r'<[^>]+>', '', new_title)
+        if old_no_html.strip() == new_no_html.strip():
+            return False
+        
+        # Ignorer les changements de casse avec espaces
+        old_normalized = re.sub(r'\s+', ' ', old_title.lower().strip())
+        new_normalized = re.sub(r'\s+', ' ', new_title.lower().strip())
+        if old_normalized == new_normalized:
+            return False
+        
+        return True
+    
+    def _has_meaningful_content(self, section: Dict) -> bool:
+        """Vérifier si une section a du contenu significatif"""
+        activities = section.get('activities', [])
+        resources = section.get('resources', [])
+        
+        # Compter le contenu réel
+        total_items = len(activities) + len(resources)
+        total_files = 0
+        
+        for activity in activities:
+            total_files += len(activity.get('files', []))
+        for resource in resources:
+            total_files += len(resource.get('files', []))
+        
+        # Une section est significative si elle a des activités/ressources OU des fichiers
+        return total_items > 0 or total_files > 0
+    
+    def _filter_meaningful_changes(self, changes: List[Dict]) -> List[Dict]:
+        """Filtrer les changements pour ne garder que les vrais changements significatifs"""
+        meaningful_changes = []
+        
+        for change in changes:
+            change_type = change.get('type', '')
+            
+            # Toujours garder les ajouts de fichiers (vraies nouveautés)
+            if change_type == 'file_added':
+                meaningful_changes.append(change)
+                continue
+            
+            # Toujours garder les ajouts d'activités/ressources avec contenu
+            if change_type in ['activity_added', 'resource_added']:
+                if self._has_meaningful_activity_or_resource(change):
+                    meaningful_changes.append(change)
+                continue
+            
+            # Garder les ajouts de sections seulement si elles ont du contenu
+            if change_type == 'section_added':
+                if self._has_meaningful_content(change):
+                    meaningful_changes.append(change)
+                continue
+            
+            # Garder les suppressions seulement si elles avaient du contenu
+            if change_type in ['section_removed', 'activity_removed', 'resource_removed']:
+                if self._had_meaningful_content(change):
+                    meaningful_changes.append(change)
+                continue
+            
+            # Garder les renommages significatifs
+            if change_type == 'section_renamed':
+                meaningful_changes.append(change)
+                continue
+            
+            # Garder les modifications de descriptions seulement si c'est substantiel
+            if change_type == 'activity_description_changed':
+                if self._is_substantial_description_change(change):
+                    meaningful_changes.append(change)
+                continue
+        
+        return meaningful_changes
+    
+    def _has_meaningful_activity_or_resource(self, change: Dict) -> bool:
+        """Vérifier si une activité ou ressource ajoutée a du contenu significatif"""
+        # Vérifier s'il y a des fichiers
+        if 'file_name' in change:
+            return True
+        
+        # Vérifier s'il y a une description substantielle
+        details = change.get('details', '')
+        if len(details) > 50:  # Description substantielle
+            return True
+        
+        return False
+    
+    def _had_meaningful_content(self, change: Dict) -> bool:
+        """Vérifier si une section/activité/ressource supprimée avait du contenu significatif"""
+        details = change.get('details', '')
+        
+        # Chercher des indicateurs de contenu dans les détails
+        if 'Fichiers:' in details:
+            try:
+                files_part = details.split('Fichiers:')[1].split('\n')[0]
+                files_count = int(files_part.split(',')[0])
+                if files_count > 0:
+                    return True
+            except:
+                pass
+        
+        # Chercher des activités/ressources
+        if 'Activités:' in details or 'Ressources:' in details:
+            try:
+                for part in details.split('\n'):
+                    if 'Activités:' in part or 'Ressources:' in part:
+                        count = int(part.split(':')[1].split(',')[0])
+                        if count > 0:
+                            return True
+            except:
+                pass
+        
+        return False
+    
+    def _is_substantial_description_change(self, change: Dict) -> bool:
+        """Vérifier si un changement de description est substantiel"""
+        details = change.get('details', '')
+        
+        # Extraire ancienne et nouvelle description
+        if 'Ancienne:' in details and 'Nouvelle:' in details:
+            try:
+                old_desc = details.split('Ancienne:')[1].split('Nouvelle:')[0].strip()
+                new_desc = details.split('Nouvelle:')[1].strip()
+                
+                # Ignorer les changements de formatage HTML uniquement
+                import re
+                old_clean = re.sub(r'<[^>]+>', '', old_desc)
+                new_clean = re.sub(r'<[^>]+>', '', new_desc)
+                
+                if old_clean.strip() == new_clean.strip():
+                    return False
+                
+                # Vérifier que le changement est substantiel (plus de 10 caractères différents)
+                if len(old_clean) > 0 and len(new_clean) > 0:
+                    ratio = difflib.SequenceMatcher(None, old_clean, new_clean).ratio()
+                    return ratio < 0.9  # Changement significatif si similarité < 90%
+                
+            except:
+                pass
+        
+        return True  # Par défaut, considérer comme substantiel si on ne peut pas analyser
+    
+    def _normalize_for_comparison(self, text: str) -> str:
+        """Normaliser un texte pour la comparaison de similarité"""
+        import re
+        import unicodedata
+        
+        # Normaliser les caractères Unicode (NFC)
+        text = unicodedata.normalize('NFC', text)
+        
+        # Convertir en minuscules
+        text = text.lower()
+        
+        # Supprimer les balises HTML
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # Normaliser les espaces
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Supprimer la ponctuation
+        text = re.sub(r'[^\w\s]', '', text)
+        
+        return text
