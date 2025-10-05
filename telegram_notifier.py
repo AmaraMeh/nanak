@@ -59,6 +59,7 @@ class TelegramNotifier:
             '/count': self._cmd_courses_count,
             
             # === SCANS ET MAINTENANCE ===
+            '/first': self._cmd_first_scan,
             '/rescan': self._cmd_rescan,
             '/scan': self._cmd_rescan,
             '/rescan_course': self._cmd_rescan_course,
@@ -1483,6 +1484,13 @@ class TelegramNotifier:
                 else:
                     await self._safe_send(cq.message.chat_id, "❌ Big scan annulé")
             
+            elif data.startswith('firstscan:confirm:'):
+                choice = data.split(':',2)[2]
+                if choice == 'yes':
+                    await self._launch_first_scan(cq.message.chat_id)
+                else:
+                    await self._safe_send(cq.message.chat_id, "❌ Premier scan annulé")
+            
             else:
                 await self._safe_send(cq.message.chat_id, f"❌ Callback inconnu: {data}")
                 
@@ -1703,6 +1711,33 @@ class TelegramNotifier:
         kb = InlineKeyboardMarkup(rows)
         await self.bot.send_message(chat_id=chat_id, text=txt, reply_markup=kb)
 
+    async def _cmd_first_scan(self, chat_id, args):
+        """Lancer le premier scan complet (inventaire initial)"""
+        if not self.bot_ref:
+            return await self._safe_send(chat_id, "❌ Bot non disponible")
+        
+        # Vérifier si un scan initial a déjà été fait
+        if self.bot_ref.initial_scan_completed_at:
+            return await self._safe_send(chat_id, 
+                f"✅ Premier scan déjà effectué le {self.bot_ref.initial_scan_completed_at.strftime('%d/%m/%Y à %H:%M:%S')}\n\n"
+                "Utilisez /bigscan pour forcer un nouveau scan complet."
+            )
+        
+        # Demander confirmation
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton('✅ Oui, lancer le premier scan', callback_data='firstscan:confirm:yes')],
+            [InlineKeyboardButton('❌ Annuler', callback_data='firstscan:confirm:no')]
+        ])
+        await self.bot.send_message(
+            chat_id=chat_id, 
+            text="🔍 <b>Premier scan complet</b>\n\n"
+                 "Cette commande va lancer l'inventaire initial de tous les cours surveillés.\n"
+                 "Cela peut prendre du temps et télécharger des fichiers.\n\n"
+                 "⚠️ <b>Confirmer le lancement ?</b>",
+            reply_markup=kb,
+            parse_mode='HTML'
+        )
+
     async def _cmd_bigscan(self, chat_id, args):
         from time import time as _time
         cooldown = Config.BIGSCAN_COOLDOWN_MINUTES * 60
@@ -1727,6 +1762,24 @@ class TelegramNotifier:
             return await self._safe_send(chat_id, "Bot ref indisponible")
         self.bot_ref.trigger_big_scan()
         await self._safe_send(chat_id, "🚀 Big scan lancé (inventaire complet + fichiers si activés)")
+
+    async def _launch_first_scan(self, chat_id):
+        """Lancer le premier scan complet"""
+        if not self.bot_ref:
+            return await self._safe_send(chat_id, "❌ Bot non disponible")
+        
+        # Forcer le premier scan
+        self.bot_ref.force_full_initial = True
+        # Activer téléchargement des fichiers seulement pendant ce premier scan
+        self.bot_ref.scraper.enable_file_download = Config.SEND_FILES_AS_DOCUMENTS
+        
+        await self._safe_send(chat_id, "🚀 Premier scan lancé (inventaire initial + fichiers si activés)")
+        
+        # Lancer le scan initial
+        await self.bot_ref.check_all_courses(is_initial_scan=True)
+        
+        # Après le premier scan, désactiver téléchargement automatique
+        self.bot_ref.scraper.enable_file_download = False
 
     async def _cmd_last_files(self, chat_id, args):
         """Lister les derniers fichiers ajoutés sur 7 jours."""
