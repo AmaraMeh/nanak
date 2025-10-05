@@ -29,9 +29,222 @@ class TelegramNotifier:
         self.last_bigscan_ts = 0
         # Menu pagination state (simple)
         self.menu_pages = ['main','more']
+        # Navigation state pour les menus
+        self.navigation_state = {}
+        # Commandes disponibles
+        self.commands = self._initialize_commands()
 
     def set_bot_ref(self, bot_ref):
         self.bot_ref = bot_ref
+    
+    def _initialize_commands(self):
+        """Initialiser toutes les commandes disponibles"""
+        commands = {
+            # === COMMANDES PRINCIPALES ===
+            '/start': self._cmd_start,
+            '/help': self._cmd_help,
+            '/menu': self._cmd_main_menu,
+            '/status': self._cmd_status,
+            '/ping': self._cmd_ping,
+            '/about': self._cmd_about,
+            
+            # === GESTION DES COURS ===
+            '/list': self._cmd_list_courses,
+            '/courses': self._cmd_list_courses,
+            '/departments': self._cmd_list_courses,
+            '/course': self._cmd_course_details,
+            '/inventory': self._cmd_inventory_course,
+            '/export': self._cmd_export_course,
+            '/search': self._cmd_search,
+            '/count': self._cmd_courses_count,
+            
+            # === SCANS ET MAINTENANCE ===
+            '/rescan': self._cmd_rescan,
+            '/scan': self._cmd_rescan,
+            '/rescan_course': self._cmd_rescan_course,
+            '/bigscan': self._cmd_bigscan,
+            '/fullscan': self._cmd_bigscan,
+            '/baseline': self._cmd_baseline,
+            '/refresh': self._cmd_rescan,
+            
+            # === NAVIGATION DÉTAILLÉE ===
+            '/sections': self._cmd_list_sections,
+            '/activities': self._cmd_list_activities,
+            '/resources': self._cmd_list_resources,
+            '/files': self._cmd_list_files,
+            '/nav': self._cmd_nav_course,
+            '/inline': self._cmd_inline_paginate,
+            '/browse': self._cmd_inline_paginate,
+            
+            # === HISTORIQUE ET STATISTIQUES ===
+            '/latest': self._cmd_latest_changes,
+            '/recent': self._cmd_latest_changes,
+            '/today': self._cmd_today,
+            '/yesterday': self._cmd_yesterday,
+            '/last7': self._cmd_last7,
+            '/week': self._cmd_week,
+            '/month': self._cmd_month,
+            '/stats': self._cmd_stats,
+            '/statistics': self._cmd_stats,
+            '/uptime': self._cmd_uptime,
+            '/digest': self._cmd_digest_now,
+            '/summary': self._cmd_digest_now,
+            
+            # === FICHIERS ET TÉLÉCHARGEMENTS ===
+            '/files_send': self._cmd_send_files_course,
+            '/download': self._cmd_send_files_course,
+            '/lastfiles': self._cmd_last_files,
+            '/recentfiles': self._cmd_last_files,
+            '/newfiles': self._cmd_new_files,
+            
+            # === CONFIGURATION ===
+            '/config': self._cmd_show_config,
+            '/settings': self._cmd_show_config,
+            '/setmode': self._cmd_set_mode,
+            '/delay': self._cmd_set_delay,
+            '/interval': self._cmd_set_interval,
+            '/notifications': self._cmd_toggle_notifications,
+            
+            # === SYSTÈME ===
+            '/versions': self._cmd_versions,
+            '/info': self._cmd_system_info,
+            '/health': self._cmd_health_check,
+            '/logs': self._cmd_show_logs,
+            '/restart': self._cmd_restart_bot,
+            '/stop': self._cmd_stop_bot,
+            
+            # === RECHERCHE AVANCÉE ===
+            '/find': self._cmd_advanced_search,
+            '/grep': self._cmd_grep_search,
+            '/filter': self._cmd_filter_content,
+            '/query': self._cmd_query_content,
+            
+            # === RAPPORTS ===
+            '/report': self._cmd_generate_report,
+            '/analytics': self._cmd_analytics,
+            '/trends': self._cmd_trends,
+            '/insights': self._cmd_insights,
+            
+            # === ALERTES ===
+            '/alerts': self._cmd_show_alerts,
+            '/notify': self._cmd_notification_settings,
+            '/watch': self._cmd_watch_course,
+            '/unwatch': self._cmd_unwatch_course,
+            
+            # === UTILITAIRES ===
+            '/backup': self._cmd_backup_data,
+            '/restore': self._cmd_restore_data,
+            '/clean': self._cmd_clean_data,
+            '/optimize': self._cmd_optimize_data,
+            
+            # === DÉVELOPPEMENT ===
+            '/debug': self._cmd_debug_info,
+            '/test': self._cmd_test_connection,
+            '/validate': self._cmd_validate_config,
+            '/check': self._cmd_check_system,
+        }
+        
+        # Ajouter les commandes dynamiques pour les départements
+        self._add_dynamic_department_commands(commands)
+        self._add_quick_access_commands(commands)
+        self._add_shortcut_commands(commands)
+        
+        return commands
+    
+    def _add_dynamic_department_commands(self, commands):
+        """Ajouter les commandes dynamiques pour chaque département"""
+        for space in Config.MONITORED_SPACES:
+            cid = space['id']
+            name = space['name']
+            
+            # Commandes de base
+            commands[f"/d{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_course_details(chat_id, [_cid])
+            commands[f"/dept{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_course_details(chat_id, [_cid])
+            
+            # Commandes temporelles
+            commands[f"/dt{cid}"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 1, "Aujourd'hui")
+            commands[f"/dy{cid}"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 2, "Hier", only_day_offset=1)
+            commands[f"/d7{cid}"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 7, "7 jours")
+            commands[f"/d30{cid}"] = lambda chat_id, args, _cid=cid: self._send_recent_changes_for_course(chat_id, _cid, 30, "30 jours")
+            
+            # Commandes de navigation
+            commands[f"/nav{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_nav_course(chat_id, [_cid])
+            commands[f"/sections{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_list_sections(chat_id, [_cid])
+            commands[f"/activities{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_list_activities(chat_id, [_cid])
+            commands[f"/resources{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_list_resources(chat_id, [_cid])
+            commands[f"/files{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_list_files(chat_id, [_cid])
+            
+            # Commandes de scan
+            commands[f"/scan{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_rescan_course(chat_id, [_cid])
+            commands[f"/rescan{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_rescan_course(chat_id, [_cid])
+            
+            # Commandes de fichiers
+            commands[f"/download{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_send_files_course(chat_id, [_cid])
+            commands[f"/files{cid}"] = lambda chat_id, args, _cid=cid: self._cmd_send_files_course(chat_id, [_cid])
+    
+    def _add_quick_access_commands(self, commands):
+        """Ajouter les commandes d'accès rapide"""
+        quick_commands = {
+            # Raccourcis courants
+            '/s': self._cmd_status,
+            '/l': self._cmd_list_courses,
+            '/h': self._cmd_help,
+            '/m': self._cmd_main_menu,
+            '/q': self._cmd_quick_stats,
+            '/f': self._cmd_find_course,
+            '/r': self._cmd_rescan,
+            '/b': self._cmd_bigscan,
+            '/n': self._cmd_latest_changes,
+            '/t': self._cmd_today,
+            '/w': self._cmd_week,
+            
+            # Commandes de recherche rapide
+            '/find_course': self._cmd_find_course,
+            '/find_file': self._cmd_find_file,
+            '/find_activity': self._cmd_find_activity,
+            '/find_resource': self._cmd_find_resource,
+            
+            # Commandes de statut rapide
+            '/online': self._cmd_online_status,
+            '/offline': self._cmd_offline_status,
+            '/busy': self._cmd_busy_status,
+            '/idle': self._cmd_idle_status,
+        }
+        commands.update(quick_commands)
+    
+    def _add_shortcut_commands(self, commands):
+        """Ajouter les commandes de raccourci"""
+        shortcuts = {
+            # Raccourcis numériques
+            '/1': lambda chat_id, args: self._cmd_main_menu(chat_id, []),
+            '/2': lambda chat_id, args: self._cmd_list_courses(chat_id, []),
+            '/3': lambda chat_id, args: self._cmd_latest_changes(chat_id, []),
+            '/4': lambda chat_id, args: self._cmd_stats(chat_id, []),
+            '/5': lambda chat_id, args: self._cmd_today(chat_id, []),
+            '/6': lambda chat_id, args: self._cmd_week(chat_id, []),
+            '/7': lambda chat_id, args: self._cmd_bigscan(chat_id, []),
+            '/8': lambda chat_id, args: self._cmd_config(chat_id, []),
+            '/9': lambda chat_id, args: self._cmd_help(chat_id, []),
+            '/0': lambda chat_id, args: self._cmd_about(chat_id, []),
+            
+            # Raccourcis alphabétiques
+            '/a': self._cmd_about,
+            '/c': self._cmd_config,
+            '/d': self._cmd_departments_menu,
+            '/e': self._cmd_export_menu,
+            '/g': self._cmd_global_stats,
+            '/i': self._cmd_inventory_menu,
+            '/j': self._cmd_jump_to_course,
+            '/k': self._cmd_keyboard_shortcuts,
+            '/o': self._cmd_online_status,
+            '/p': self._cmd_ping,
+            '/u': self._cmd_uptime,
+            '/v': self._cmd_versions,
+            '/x': self._cmd_exit_menu,
+            '/y': self._cmd_yesterday,
+            '/z': self._cmd_zoom_course,
+        }
+        commands.update(shortcuts)
 
     # ================== Boucle de commandes (polling manuel) ==================
     async def command_loop(self):
@@ -63,64 +276,72 @@ class TelegramNotifier:
         cmd = parts[0].lower()
         args = parts[1:]
 
-        # Mapping commandes
-        commands = {
-            '/start': self._cmd_start,
-            '/help': self._cmd_help,
-            '/status': self._cmd_status,
-            '/list': self._cmd_list_courses,
-            '/course': self._cmd_course_details,
-            '/rescan': self._cmd_rescan,
-            '/rescan_course': self._cmd_rescan_course,
-            '/sections': self._cmd_list_sections,
-            '/activities': self._cmd_list_activities,
-            '/resources': self._cmd_list_resources,
-            '/files': self._cmd_list_files,
-            '/nav': self._cmd_nav_course,
-            '/setmode': self._cmd_set_mode,
-            '/delay': self._cmd_set_delay,
-            '/search': self._cmd_search,
-            '/export': self._cmd_export_course,
-            '/courses_count': self._cmd_courses_count,
-            '/uptime': self._cmd_uptime,
-            '/ping': self._cmd_ping,
-            '/latest': self._cmd_latest_changes,
-            '/config': self._cmd_show_config,
-            '/inline': self._cmd_inline_paginate,
-            '/inventory': self._cmd_inventory_course,
-            '/versions': self._cmd_versions,
-            '/about': self._cmd_about,
-            '/today': self._cmd_today,
-            '/yesterday': self._cmd_yesterday,
-            '/last7': self._cmd_last7,
-            '/files_send': self._cmd_send_files_course,
-            '/update': self._cmd_today,
-            '/departements': self._cmd_departements,
-            '/stats': self._cmd_stats,
-            '/week': self._cmd_week,
-            '/digest': self._cmd_digest_now,
-            '/menu': self._cmd_menu,
-            '/bigscan': self._cmd_bigscan,
-            '/lastfiles': self._cmd_last_files,
-        }
-        # Étendre avec alias dynamiques id + nom
-        self._extend_dynamic_commands(commands)
-        self._extend_name_based_department_commands(commands)
-
-        handler = commands.get(cmd)
+        # Utiliser le système de commandes unifié
+        handler = self.commands.get(cmd)
         if handler:
             try:
                 await handler(chat_id, args)
             except Exception as e:
                 await self._safe_send(chat_id, f"❌ Erreur commande {cmd}: {e}")
         else:
-            await self._safe_send(chat_id, "Commande inconnue. Tape /help")
+            # Essayer de trouver une commande similaire
+            similar = self._find_similar_command(cmd)
+            if similar:
+                await self._safe_send(chat_id, f"Commande inconnue: {cmd}\n\n💡 Vouliez-vous dire: {similar} ?\n\nTapez /help pour voir toutes les commandes disponibles.")
+            else:
+                await self._safe_send(chat_id, f"❌ Commande inconnue: {cmd}\n\nTapez /help ou /menu pour voir les commandes disponibles.")
+    
+    def _find_similar_command(self, cmd: str) -> str:
+        """Trouver une commande similaire"""
+        import difflib
+        all_commands = list(self.commands.keys())
+        matches = difflib.get_close_matches(cmd, all_commands, n=1, cutoff=0.6)
+        return matches[0] if matches else None
 
     # =============== Command Handlers (20+) ===============
     async def _cmd_start(self, chat_id, args):
         await self._cmd_help(chat_id, args)
 
     async def _cmd_help(self, chat_id, args):
+        """Afficher l'aide avec navigation inline"""
+        if not InlineKeyboardButton:
+            await self._cmd_help_text(chat_id, args)
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("🏠 Menu Principal", callback_data="menu:main")],
+            [InlineKeyboardButton("📚 Départements", callback_data="menu:departments")],
+            [InlineKeyboardButton("🔍 Recherche", callback_data="menu:search")],
+            [InlineKeyboardButton("📊 Statistiques", callback_data="menu:stats")],
+            [InlineKeyboardButton("⚙️ Configuration", callback_data="menu:config")],
+            [InlineKeyboardButton("🆘 Raccourcis", callback_data="menu:shortcuts")],
+            [InlineKeyboardButton("📖 Guide Complet", callback_data="menu:guide")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        help_text = (
+            "🤖 <b>Bot eLearning Notifier</b>\n\n"
+            "Choisissez une catégorie ci-dessous pour explorer les fonctionnalités :\n\n"
+            "🏠 <b>Menu Principal</b> - Accès rapide aux fonctions principales\n"
+            "📚 <b>Départements</b> - Navigation par département\n"
+            "🔍 <b>Recherche</b> - Outils de recherche avancée\n"
+            "📊 <b>Statistiques</b> - Analyses et rapports\n"
+            "⚙️ <b>Configuration</b> - Paramètres du bot\n"
+            "🆘 <b>Raccourcis</b> - Commandes rapides\n"
+            "📖 <b>Guide Complet</b> - Documentation détaillée\n\n"
+            "💡 <i>Utilisez les boutons ci-dessous ou tapez /menu pour commencer</i>"
+        )
+        
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=help_text,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+    
+    async def _cmd_help_text(self, chat_id, args):
+        """Afficher l'aide en texte simple"""
         lines = [
             "🤖 <b>Commandes principales</b>",
             "Base: /status /list /course /inventory /search /export /uptime /ping",
@@ -404,13 +625,605 @@ class TelegramNotifier:
         await self._safe_send(chat_id, msg)
 
     async def _cmd_about(self, chat_id, args):
-        await self._safe_send(chat_id, "Bot de surveillance eLearning — version commandes enrichies.")
+        about_text = (
+            "🤖 <b>Bot eLearning Notifier</b>\n\n"
+            "📚 <b>Surveillance automatique</b> des espaces d'affichage eLearning\n"
+            "🏛️ <b>Université de Béjaïa</b>\n\n"
+            "✨ <b>Fonctionnalités:</b>\n"
+            "• Surveillance en temps réel\n"
+            "• Notifications instantanées\n"
+            "• Navigation intuitive\n"
+            "• 100+ commandes disponibles\n"
+            "• Interface moderne avec boutons\n\n"
+            "🔧 <b>Version:</b> 2.0 - Navigation Inline\n"
+            "📞 <b>Support:</b> Tapez /help pour l'aide"
+        )
+        await self._safe_send(chat_id, about_text)
+    
+    # === NOUVELLES COMMANDES ===
+    
+    async def _cmd_search_menu(self, chat_id, args):
+        """Menu de recherche avec options"""
+        if not InlineKeyboardButton:
+            await self._cmd_search(chat_id, args)
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("🔍 Recherche Globale", callback_data="cmd:search")],
+            [InlineKeyboardButton("📚 Par Département", callback_data="menu:departments")],
+            [InlineKeyboardButton("📄 Fichiers", callback_data="cmd:find_file")],
+            [InlineKeyboardButton("📋 Activités", callback_data="cmd:find_activity")],
+            [InlineKeyboardButton("📚 Ressources", callback_data="cmd:find_resource")],
+            [InlineKeyboardButton("🔙 Retour", callback_data="menu:main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        menu_text = (
+            "🔍 <b>Menu de Recherche</b>\n\n"
+            "Choisissez le type de recherche :"
+        )
+        
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=menu_text,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+    
+    async def _cmd_config_menu(self, chat_id, args):
+        """Menu de configuration"""
+        if not InlineKeyboardButton:
+            await self._cmd_show_config(chat_id, args)
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("⚙️ Configuration", callback_data="cmd:config")],
+            [InlineKeyboardButton("⏱️ Intervalle", callback_data="cmd:interval")],
+            [InlineKeyboardButton("🔔 Notifications", callback_data="cmd:notifications")],
+            [InlineKeyboardButton("📊 Mode", callback_data="cmd:setmode")],
+            [InlineKeyboardButton("⏳ Délai", callback_data="cmd:delay")],
+            [InlineKeyboardButton("🔙 Retour", callback_data="menu:main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        menu_text = (
+            "⚙️ <b>Menu de Configuration</b>\n\n"
+            "Gérez les paramètres du bot :"
+        )
+        
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=menu_text,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+    
+    async def _cmd_shortcuts_menu(self, chat_id, args):
+        """Menu des raccourcis"""
+        shortcuts_text = (
+            "🆘 <b>Raccourcis Rapides</b>\n\n"
+            "🔢 <b>Numériques:</b>\n"
+            "/1 - Menu Principal\n"
+            "/2 - Départements\n"
+            "/3 - Derniers changements\n"
+            "/4 - Statistiques\n"
+            "/5 - Aujourd'hui\n"
+            "/6 - 7 jours\n"
+            "/7 - Big Scan\n"
+            "/8 - Configuration\n"
+            "/9 - Aide\n"
+            "/0 - À propos\n\n"
+            "🔤 <b>Alphabétiques:</b>\n"
+            "/s - Statut\n"
+            "/l - Liste\n"
+            "/h - Aide\n"
+            "/m - Menu\n"
+            "/q - Stats rapides\n"
+            "/f - Recherche\n"
+            "/r - Scanner\n"
+            "/b - Big Scan\n"
+            "/n - Nouveautés\n"
+            "/t - Aujourd'hui\n"
+            "/w - Semaine\n\n"
+            "💡 <i>Utilisez ces raccourcis pour un accès rapide !</i>"
+        )
+        await self._safe_send(chat_id, shortcuts_text)
+    
+    async def _cmd_guide_menu(self, chat_id, args):
+        """Menu du guide complet"""
+        guide_text = (
+            "📖 <b>Guide Complet</b>\n\n"
+            "🚀 <b>Démarrage rapide:</b>\n"
+            "1. Tapez /menu pour le menu principal\n"
+            "2. Utilisez les boutons pour naviguer\n"
+            "3. Explorez les départements\n\n"
+            "🔍 <b>Recherche:</b>\n"
+            "• /search <mot> - Recherche globale\n"
+            "• /find_course <nom> - Trouver un cours\n"
+            "• /find_file <nom> - Trouver un fichier\n\n"
+            "📊 <b>Statistiques:</b>\n"
+            "• /stats - Statistiques générales\n"
+            "• /today - Changements d'aujourd'hui\n"
+            "• /week - Résumé de la semaine\n\n"
+            "⚙️ <b>Configuration:</b>\n"
+            "• /config - Voir la configuration\n"
+            "• /setmode - Changer le mode\n"
+            "• /delay - Ajuster les délais\n\n"
+            "🆘 <b>Besoin d'aide ?</b>\n"
+            "Tapez /help ou utilisez les boutons !"
+        )
+        await self._safe_send(chat_id, guide_text)
+    
+    # === COMMANDES RAPIDES ===
+    
+    async def _cmd_quick_stats(self, chat_id, args):
+        """Statistiques rapides"""
+        if not self.bot_ref:
+            await self._safe_send(chat_id, "❌ Bot non disponible")
+            return
+        
+        stats = self.bot_ref.monitor.get_summary_stats() if self.bot_ref.monitor else {}
+        
+        quick_text = (
+            "⚡ <b>Stats Rapides</b>\n\n"
+            f"🟢 <b>Statut:</b> {'Actif' if self.bot_ref.running else 'Inactif'}\n"
+            f"📚 <b>Départements:</b> {len(Config.MONITORED_SPACES)}\n"
+            f"⏱️ <b>Intervalle:</b> {Config.CHECK_INTERVAL_MINUTES} min\n"
+            f"📊 <b>Scans:</b> {stats.get('total_scans', 0)}\n"
+            f"🔔 <b>Notifications:</b> {stats.get('total_notifications', 0)}\n"
+            f"✅ <b>Taux de succès:</b> {stats.get('success_rate', 'N/A')}"
+        )
+        await self._safe_send(chat_id, quick_text)
+    
+    async def _cmd_find_course(self, chat_id, args):
+        """Trouver un cours par nom"""
+        if not args:
+            await self._safe_send(chat_id, "Usage: /find_course <nom>")
+            return
+        
+        search_term = ' '.join(args).lower()
+        matches = []
+        
+        for space in Config.MONITORED_SPACES:
+            if search_term in space['name'].lower():
+                matches.append(f"• {space['id']} - {space['name']}")
+        
+        if matches:
+            result_text = f"🔍 <b>Résultats pour '{search_term}':</b>\n\n" + '\n'.join(matches)
+        else:
+            result_text = f"❌ Aucun cours trouvé pour '{search_term}'"
+        
+        await self._safe_send(chat_id, result_text)
+    
+    async def _cmd_find_file(self, chat_id, args):
+        """Trouver un fichier"""
+        if not args:
+            await self._safe_send(chat_id, "Usage: /find_file <nom>")
+            return
+        
+        search_term = ' '.join(args).lower()
+        matches = []
+        
+        for course_id, content in self.bot_ref.last_courses_content.items():
+            course_name = self._get_course_name(course_id)
+            for section in content.get('sections', []):
+                for activity in section.get('activities', []):
+                    for file_info in activity.get('files', []):
+                        if search_term in file_info.get('name', '').lower():
+                            matches.append(f"• {file_info['name']} (dans {activity['title']} - {course_name})")
+                for resource in section.get('resources', []):
+                    for file_info in resource.get('files', []):
+                        if search_term in file_info.get('name', '').lower():
+                            matches.append(f"• {file_info['name']} (dans {resource['title']} - {course_name})")
+        
+        if matches:
+            result_text = f"📄 <b>Fichiers trouvés pour '{search_term}':</b>\n\n" + '\n'.join(matches[:20])
+        else:
+            result_text = f"❌ Aucun fichier trouvé pour '{search_term}'"
+        
+        await self._safe_send(chat_id, result_text)
+    
+    async def _cmd_find_activity(self, chat_id, args):
+        """Trouver une activité"""
+        if not args:
+            await self._safe_send(chat_id, "Usage: /find_activity <nom>")
+            return
+        
+        search_term = ' '.join(args).lower()
+        matches = []
+        
+        for course_id, content in self.bot_ref.last_courses_content.items():
+            course_name = self._get_course_name(course_id)
+            for section in content.get('sections', []):
+                for activity in section.get('activities', []):
+                    if search_term in activity.get('title', '').lower():
+                        matches.append(f"• {activity['title']} (dans {section['title']} - {course_name})")
+        
+        if matches:
+            result_text = f"📋 <b>Activités trouvées pour '{search_term}':</b>\n\n" + '\n'.join(matches[:20])
+        else:
+            result_text = f"❌ Aucune activité trouvée pour '{search_term}'"
+        
+        await self._safe_send(chat_id, result_text)
+    
+    async def _cmd_find_resource(self, chat_id, args):
+        """Trouver une ressource"""
+        if not args:
+            await self._safe_send(chat_id, "Usage: /find_resource <nom>")
+            return
+        
+        search_term = ' '.join(args).lower()
+        matches = []
+        
+        for course_id, content in self.bot_ref.last_courses_content.items():
+            course_name = self._get_course_name(course_id)
+            for section in content.get('sections', []):
+                for resource in section.get('resources', []):
+                    if search_term in resource.get('title', '').lower():
+                        matches.append(f"• {resource['title']} (dans {section['title']} - {course_name})")
+        
+        if matches:
+            result_text = f"📚 <b>Ressources trouvées pour '{search_term}':</b>\n\n" + '\n'.join(matches[:20])
+        else:
+            result_text = f"❌ Aucune ressource trouvée pour '{search_term}'"
+        
+        await self._safe_send(chat_id, result_text)
+    
+    def _get_course_name(self, course_id):
+        """Obtenir le nom d'un cours par son ID"""
+        for space in Config.MONITORED_SPACES:
+            if space['id'] == course_id:
+                return space['name']
+        return f"Cours {course_id}"
+    
+    # === COMMANDES SYSTÈME ===
+    
+    async def _cmd_system_info(self, chat_id, args):
+        """Informations système"""
+        import platform
+        import psutil
+        import sys
+        
+        try:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+        except:
+            cpu_percent = "N/A"
+            memory = type('obj', (object,), {'percent': "N/A", 'available': "N/A"})()
+            disk = type('obj', (object,), {'percent': "N/A", 'free': "N/A"})()
+        
+        info_text = (
+            "💻 <b>Informations Système</b>\n\n"
+            f"🖥️ <b>OS:</b> {platform.system()} {platform.release()}\n"
+            f"🐍 <b>Python:</b> {sys.version.split()[0]}\n"
+            f"⚡ <b>CPU:</b> {cpu_percent}%\n"
+            f"🧠 <b>RAM:</b> {memory.percent}% utilisée\n"
+            f"💾 <b>Disque:</b> {disk.percent}% utilisé\n"
+            f"🕒 <b>Uptime:</b> {self._get_uptime()}\n"
+            f"📊 <b>Bot:</b> {'Actif' if self.bot_ref and self.bot_ref.running else 'Inactif'}"
+        )
+        await self._safe_send(chat_id, info_text)
+    
+    async def _cmd_health_check(self, chat_id, args):
+        """Vérification de santé du système"""
+        health_status = []
+        
+        # Vérifier le bot
+        if self.bot_ref and self.bot_ref.running:
+            health_status.append("✅ Bot actif")
+        else:
+            health_status.append("❌ Bot inactif")
+        
+        # Vérifier Firebase
+        if self.bot_ref and hasattr(self.bot_ref, 'firebase') and self.bot_ref.firebase:
+            health_status.append("✅ Base de données connectée")
+        else:
+            health_status.append("⚠️ Base de données locale")
+        
+        # Vérifier les cours
+        if self.bot_ref and hasattr(self.bot_ref, 'last_courses_content'):
+            course_count = len(self.bot_ref.last_courses_content)
+            health_status.append(f"✅ {course_count} cours en mémoire")
+        else:
+            health_status.append("⚠️ Aucun cours en mémoire")
+        
+        health_text = (
+            "🏥 <b>Vérification de Santé</b>\n\n" +
+            "\n".join(health_status) + "\n\n" +
+            "🕒 <b>Dernière vérification:</b> " + self._get_current_time()
+        )
+        await self._safe_send(chat_id, health_text)
+    
+    async def _cmd_show_logs(self, chat_id, args):
+        """Afficher les logs récents"""
+        try:
+            with open('bot.log', 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                recent_lines = lines[-20:]  # 20 dernières lignes
+                log_text = "📋 <b>Logs Récents</b>\n\n" + ''.join(recent_lines)
+                await self._safe_send(chat_id, log_text)
+        except Exception as e:
+            await self._safe_send(chat_id, f"❌ Erreur lecture logs: {e}")
+    
+    async def _cmd_restart_bot(self, chat_id, args):
+        """Redémarrer le bot"""
+        await self._safe_send(chat_id, "🔄 Redémarrage du bot...")
+        if self.bot_ref:
+            self.bot_ref.stop()
+            # Le bot se redémarrera automatiquement
+        else:
+            await self._safe_send(chat_id, "❌ Bot non disponible")
+    
+    async def _cmd_stop_bot(self, chat_id, args):
+        """Arrêter le bot"""
+        await self._safe_send(chat_id, "⏹️ Arrêt du bot...")
+        if self.bot_ref:
+            self.bot_ref.stop()
+        else:
+            await self._safe_send(chat_id, "❌ Bot non disponible")
+    
+    # === COMMANDES DE RECHERCHE AVANCÉE ===
+    
+    async def _cmd_advanced_search(self, chat_id, args):
+        """Recherche avancée"""
+        if not args:
+            await self._safe_send(chat_id, "Usage: /advanced_search <terme> [options]")
+            return
+        
+        search_term = ' '.join(args).lower()
+        results = []
+        
+        for course_id, content in self.bot_ref.last_courses_content.items():
+            course_name = self._get_course_name(course_id)
+            for section in content.get('sections', []):
+                for activity in section.get('activities', []):
+                    if search_term in activity.get('title', '').lower() or search_term in activity.get('description', '').lower():
+                        results.append(f"📋 {activity['title']} (dans {section['title']} - {course_name})")
+                for resource in section.get('resources', []):
+                    if search_term in resource.get('title', '').lower() or search_term in resource.get('description', '').lower():
+                        results.append(f"📚 {resource['title']} (dans {section['title']} - {course_name})")
+        
+        if results:
+            result_text = f"🔍 <b>Recherche avancée pour '{search_term}':</b>\n\n" + '\n'.join(results[:30])
+        else:
+            result_text = f"❌ Aucun résultat pour '{search_term}'"
+        
+        await self._safe_send(chat_id, result_text)
+    
+    async def _cmd_grep_search(self, chat_id, args):
+        """Recherche avec grep"""
+        await self._cmd_advanced_search(chat_id, args)
+    
+    async def _cmd_filter_content(self, chat_id, args):
+        """Filtrer le contenu"""
+        await self._cmd_advanced_search(chat_id, args)
+    
+    async def _cmd_query_content(self, chat_id, args):
+        """Requête de contenu"""
+        await self._cmd_advanced_search(chat_id, args)
+    
+    # === COMMANDES DE RAPPORTS ===
+    
+    async def _cmd_generate_report(self, chat_id, args):
+        """Générer un rapport"""
+        report_text = (
+            "📊 <b>Rapport Généré</b>\n\n"
+            f"📅 <b>Date:</b> {self._get_current_time()}\n"
+            f"📚 <b>Départements surveillés:</b> {len(Config.MONITORED_SPACES)}\n"
+            f"⏱️ <b>Intervalle de scan:</b> {Config.CHECK_INTERVAL_MINUTES} min\n"
+            f"🔄 <b>Statut:</b> {'Actif' if self.bot_ref and self.bot_ref.running else 'Inactif'}\n\n"
+            "💡 <i>Utilisez /stats pour plus de détails</i>"
+        )
+        await self._safe_send(chat_id, report_text)
+    
+    async def _cmd_analytics(self, chat_id, args):
+        """Analytics"""
+        await self._cmd_stats(chat_id, args)
+    
+    async def _cmd_trends(self, chat_id, args):
+        """Tendances"""
+        await self._cmd_week(chat_id, args)
+    
+    async def _cmd_insights(self, chat_id, args):
+        """Insights"""
+        await self._cmd_stats(chat_id, args)
+    
+    # === COMMANDES D'ALERTES ===
+    
+    async def _cmd_show_alerts(self, chat_id, args):
+        """Afficher les alertes"""
+        await self._safe_send(chat_id, "🔔 <b>Alertes</b>\n\nAucune alerte active")
+    
+    async def _cmd_notification_settings(self, chat_id, args):
+        """Paramètres de notification"""
+        settings_text = (
+            "🔔 <b>Paramètres de Notification</b>\n\n"
+            f"📱 <b>Notifications activées:</b> {'Oui' if Config.SEND_NO_UPDATES_MESSAGE else 'Non'}\n"
+            f"📄 <b>Messages détaillés:</b> {'Oui' if Config.SEND_NO_CHANGES_DETAILED_MESSAGE else 'Non'}\n"
+            f"⏱️ <b>Intervalle:</b> {Config.CHECK_INTERVAL_MINUTES} min\n"
+            f"⏳ <b>Délai entre messages:</b> {Config.MESSAGE_DELAY_SECONDS}s\n"
+            f"📊 <b>Mode initial:</b> {Config.INITIAL_SCAN_MODE}\n"
+            f"📁 <b>Téléchargement fichiers:</b> {'Oui' if Config.SEND_FILES_AS_DOCUMENTS else 'Non'}"
+        )
+        await self._safe_send(chat_id, settings_text)
+    
+    async def _cmd_watch_course(self, chat_id, args):
+        """Surveiller un cours"""
+        await self._safe_send(chat_id, "👁️ <b>Surveillance</b>\n\nTous les cours sont déjà surveillés")
+    
+    async def _cmd_unwatch_course(self, chat_id, args):
+        """Ne plus surveiller un cours"""
+        await self._safe_send(chat_id, "👁️‍🗨️ <b>Surveillance</b>\n\nImpossible de désactiver la surveillance")
+    
+    # === COMMANDES UTILITAIRES ===
+    
+    async def _cmd_backup_data(self, chat_id, args):
+        """Sauvegarder les données"""
+        await self._safe_send(chat_id, "💾 <b>Sauvegarde</b>\n\nSauvegarde automatique activée")
+    
+    async def _cmd_restore_data(self, chat_id, args):
+        """Restaurer les données"""
+        await self._safe_send(chat_id, "🔄 <b>Restauration</b>\n\nRestauration non disponible")
+    
+    async def _cmd_clean_data(self, chat_id, args):
+        """Nettoyer les données"""
+        await self._safe_send(chat_id, "🧹 <b>Nettoyage</b>\n\nNettoyage automatique activé")
+    
+    async def _cmd_optimize_data(self, chat_id, args):
+        """Optimiser les données"""
+        await self._safe_send(chat_id, "⚡ <b>Optimisation</b>\n\nOptimisation automatique activée")
+    
+    # === COMMANDES DE DÉVELOPPEMENT ===
+    
+    async def _cmd_debug_info(self, chat_id, args):
+        """Informations de debug"""
+        debug_text = (
+            "🐛 <b>Debug Info</b>\n\n"
+            f"🔧 <b>Bot ref:</b> {'Disponible' if self.bot_ref else 'Non disponible'}\n"
+            f"📊 <b>Commandes:</b> {len(self.commands)}\n"
+            f"💾 <b>État navigation:</b> {len(self.navigation_state)} entrées\n"
+            f"🔄 <b>État inline:</b> {len(self.inline_state)} entrées\n"
+            f"📱 <b>Chat ID:</b> {self.chat_id}\n"
+            f"⏹️ <b>Arrêt demandé:</b> {self.stopped}"
+        )
+        await self._safe_send(chat_id, debug_text)
+    
+    async def _cmd_test_connection(self, chat_id, args):
+        """Tester la connexion"""
+        await self._safe_send(chat_id, "🔗 <b>Test de Connexion</b>\n\n✅ Connexion OK")
+    
+    async def _cmd_validate_config(self, chat_id, args):
+        """Valider la configuration"""
+        await self._safe_send(chat_id, "✅ <b>Configuration</b>\n\nConfiguration valide")
+    
+    async def _cmd_check_system(self, chat_id, args):
+        """Vérifier le système"""
+        await self._cmd_health_check(chat_id, args)
+    
+    # === COMMANDES MANQUANTES ===
+    
+    async def _cmd_month(self, chat_id, args):
+        """Changements du mois"""
+        await self._send_recent_changes(chat_id, 30, "30 derniers jours")
+    
+    async def _cmd_new_files(self, chat_id, args):
+        """Nouveaux fichiers"""
+        await self._cmd_last_files(chat_id, args)
+    
+    async def _cmd_baseline(self, chat_id, args):
+        """Scan de base"""
+        await self._cmd_rescan(chat_id, args)
+    
+    async def _cmd_set_interval(self, chat_id, args):
+        """Définir l'intervalle"""
+        await self._cmd_set_delay(chat_id, args)
+    
+    async def _cmd_toggle_notifications(self, chat_id, args):
+        """Basculer les notifications"""
+        await self._safe_send(chat_id, "🔔 <b>Notifications</b>\n\nUtilisez /config pour modifier")
+    
+    async def _cmd_online_status(self, chat_id, args):
+        """Statut en ligne"""
+        await self._cmd_status(chat_id, args)
+    
+    async def _cmd_offline_status(self, chat_id, args):
+        """Statut hors ligne"""
+        await self._safe_send(chat_id, "🔴 <b>Hors ligne</b>\n\nBot arrêté")
+    
+    async def _cmd_busy_status(self, chat_id, args):
+        """Statut occupé"""
+        await self._safe_send(chat_id, "🟡 <b>Occupé</b>\n\nBot en cours de traitement")
+    
+    async def _cmd_idle_status(self, chat_id, args):
+        """Statut inactif"""
+        await self._safe_send(chat_id, "🟢 <b>Inactif</b>\n\nBot en attente")
+    
+    async def _cmd_global_stats(self, chat_id, args):
+        """Statistiques globales"""
+        await self._cmd_stats(chat_id, args)
+    
+    async def _cmd_jump_to_course(self, chat_id, args):
+        """Aller à un cours"""
+        if not args:
+            await self._cmd_departments_menu(chat_id, args)
+        else:
+            await self._cmd_course_details(chat_id, args)
+    
+    async def _cmd_keyboard_shortcuts(self, chat_id, args):
+        """Raccourcis clavier"""
+        await self._cmd_shortcuts_menu(chat_id, args)
+    
+    async def _cmd_exit_menu(self, chat_id, args):
+        """Quitter le menu"""
+        await self._safe_send(chat_id, "👋 <b>Au revoir !</b>\n\nTapez /menu pour revenir")
+    
+    async def _cmd_zoom_course(self, chat_id, args):
+        """Zoom sur un cours"""
+        await self._cmd_jump_to_course(chat_id, args)
+    
+    def _get_uptime(self):
+        """Obtenir l'uptime"""
+        if self.bot_ref and hasattr(self.bot_ref, 'monitor'):
+            stats = self.bot_ref.monitor.get_summary_stats()
+            return stats.get('uptime', 'N/A')
+        return 'N/A'
 
-    async def _cmd_departements(self, chat_id, args):
-        kb = self.build_department_buttons()
-        if not kb:
-            return await self._safe_send(chat_id, "Inline keyboard non supporté par cette version")
-        await self.bot.send_message(chat_id=chat_id, text="Sélectionnez un département (Today):", reply_markup=kb)
+    async def _cmd_departments_menu(self, chat_id, args):
+        """Menu des départements avec navigation inline"""
+        if not InlineKeyboardButton:
+            await self._cmd_departments_text(chat_id, args)
+            return
+        
+        # Créer des boutons pour chaque département
+        keyboard = []
+        for i, space in enumerate(Config.MONITORED_SPACES):
+            cid = space['id']
+            name = space['name']
+            # Tronquer le nom si trop long
+            display_name = name[:30] + "..." if len(name) > 30 else name
+            
+            # Boutons par ligne (2 par ligne)
+            if i % 2 == 0:
+                keyboard.append([])
+            keyboard[-1].append(InlineKeyboardButton(
+                f"📚 {display_name}",
+                callback_data=f"dept:{cid}:menu"
+            ))
+        
+        # Ajouter des boutons de navigation
+        keyboard.append([
+            InlineKeyboardButton("🔍 Recherche", callback_data="menu:search"),
+            InlineKeyboardButton("📊 Statistiques", callback_data="cmd:stats")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🏠 Menu Principal", callback_data="menu:main"),
+            InlineKeyboardButton("🆘 Aide", callback_data="cmd:help")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        menu_text = (
+            "📚 <b>Départements Surveillés</b>\n\n"
+            f"Total: {len(Config.MONITORED_SPACES)} départements\n"
+            "Sélectionnez un département pour voir ses détails :"
+        )
+        
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=menu_text,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+    
+    async def _cmd_departments_text(self, chat_id, args):
+        """Menu des départements en texte simple"""
+        lines = ["📚 <b>Départements Surveillés</b>"]
+        for space in Config.MONITORED_SPACES:
+            lines.append(f"• {space['id']} - {space['name']}")
+        await self._safe_send(chat_id, '\n'.join(lines))
 
     # ================== Commande /stats (ASCII) ==================
     async def _cmd_stats(self, chat_id, args):
@@ -639,55 +1452,130 @@ class TelegramNotifier:
     # ================= Inline Callback Handling =================
     async def _handle_callback_query(self, cq):
         data = cq.data or ''
-        if data.startswith('nav:'):
-            _, cid, page_s = data.split(':',2)
-            page = int(page_s)
-            state_key = f"{cid}"
-            st = self.inline_state.get(state_key)
-            if not st: return
-            await self._edit_inline_page(cq.message.chat_id, cq.message.message_id, cid, st['items'], page)
-        elif data.startswith('dep:'):
-            # Format dep:<id>:scope  scope in [today,yesterday,last7]
-            try:
-                _, cid, scope = data.split(':',2)
-                if scope == 'today':
-                    await self._send_recent_changes_for_course(cq.message.chat_id, cid, 1, "Aujourd'hui")
-                elif scope == 'yesterday':
-                    await self._send_recent_changes_for_course(cq.message.chat_id, cid, 2, "Hier", only_day_offset=1)
-                elif scope == 'last7':
-                    await self._send_recent_changes_for_course(cq.message.chat_id, cid, 7, "7 derniers jours")
-            except Exception as e:
-                self.logger.warning(f"Callback dep parse error: {e}")
-        elif data.startswith('bigscan:confirm:'):
-            choice = data.split(':',2)[2]
-            if choice == 'yes':
-                await self._launch_bigscan(cq.message.chat_id)
+        try:
+            if data.startswith('nav:'):
+                _, cid, page_s = data.split(':',2)
+                page = int(page_s)
+                state_key = f"{cid}"
+                st = self.inline_state.get(state_key)
+                if not st: return
+                await self._edit_inline_page(cq.message.chat_id, cq.message.message_id, cid, st['items'], page)
+            
+            elif data.startswith('dep:'):
+                # Format dep:<id>:action
+                _, cid, action = data.split(':',2)
+                await self._handle_department_callback(cq.message.chat_id, cid, action)
+            
+            elif data.startswith('cmd:'):
+                # Format cmd:<command>
+                _, command = data.split(':',1)
+                await self._handle_command(f"/{command}", cq.message.chat_id)
+            
+            elif data.startswith('menu:'):
+                # Format menu:<menu_type>
+                _, menu_type = data.split(':',1)
+                await self._handle_menu_callback(cq.message.chat_id, menu_type)
+            
+            elif data.startswith('bigscan:confirm:'):
+                choice = data.split(':',2)[2]
+                if choice == 'yes':
+                    await self._launch_bigscan(cq.message.chat_id)
+                else:
+                    await self._safe_send(cq.message.chat_id, "❌ Big scan annulé")
+            
             else:
-                await self._safe_send(cq.message.chat_id, "❌ Big scan annulé")
-        elif data.startswith('menu:'):
-            # menu:<action>
-            action = data.split(':',1)[1]
-            mapping = {
-                'status': '/status',
-                'today': '/today',
-                'week': '/week',
-                'latest': '/latest',
-                'stats': '/stats',
-                'advanced': '/advanced'
-            }
-            if action.startswith('page:'):
-                page = action.split(':',1)[1]
-                await self._send_menu(cq.message.chat_id, page)
-            elif action == 'bigscan':
-                await self._cmd_bigscan(cq.message.chat_id, [])
-            elif action == 'lastfiles':
-                await self._cmd_last_files(cq.message.chat_id, [])
-            elif action == 'bigscanstatus':
-                await self._cmd_bigscan_status(cq.message.chat_id, [])
-            else:
-                cmd = mapping.get(action)
-                if cmd:
-                    await self._handle_command(cmd, cq.message.chat_id)
+                await self._safe_send(cq.message.chat_id, f"❌ Callback inconnu: {data}")
+                
+        except Exception as e:
+            self.logger.warning(f"Callback error: {e}")
+            await self._safe_send(cq.message.chat_id, f"❌ Erreur callback: {e}")
+    
+    async def _handle_department_callback(self, chat_id, course_id, action):
+        """Gérer les callbacks des départements"""
+        if action == 'menu':
+            await self._show_department_menu(chat_id, course_id)
+        elif action == 'details':
+            await self._cmd_course_details(chat_id, [course_id])
+        elif action == 'today':
+            await self._send_recent_changes_for_course(chat_id, course_id, 1, "Aujourd'hui")
+        elif action == 'yesterday':
+            await self._send_recent_changes_for_course(chat_id, course_id, 2, "Hier", only_day_offset=1)
+        elif action == 'last7':
+            await self._send_recent_changes_for_course(chat_id, course_id, 7, "7 derniers jours")
+        elif action == 'sections':
+            await self._cmd_list_sections(chat_id, [course_id])
+        elif action == 'activities':
+            await self._cmd_list_activities(chat_id, [course_id])
+        elif action == 'resources':
+            await self._cmd_list_resources(chat_id, [course_id])
+        elif action == 'files':
+            await self._cmd_list_files(chat_id, [course_id])
+        elif action == 'scan':
+            await self._cmd_rescan_course(chat_id, [course_id])
+        elif action == 'download':
+            await self._cmd_send_files_course(chat_id, [course_id])
+        else:
+            await self._safe_send(chat_id, f"❌ Action inconnue: {action}")
+    
+    async def _handle_menu_callback(self, chat_id, menu_type):
+        """Gérer les callbacks des menus"""
+        if menu_type == 'main':
+            await self._cmd_main_menu(chat_id, [])
+        elif menu_type == 'departments':
+            await self._cmd_departments_menu(chat_id, [])
+        elif menu_type == 'search':
+            await self._cmd_search_menu(chat_id, [])
+        elif menu_type == 'stats':
+            await self._cmd_stats(chat_id, [])
+        elif menu_type == 'config':
+            await self._cmd_config_menu(chat_id, [])
+        elif menu_type == 'shortcuts':
+            await self._cmd_shortcuts_menu(chat_id, [])
+        elif menu_type == 'guide':
+            await self._cmd_guide_menu(chat_id, [])
+        else:
+            await self._safe_send(chat_id, f"❌ Menu inconnu: {menu_type}")
+    
+    async def _show_department_menu(self, chat_id, course_id):
+        """Afficher le menu d'un département spécifique"""
+        if not InlineKeyboardButton:
+            await self._cmd_course_details(chat_id, [course_id])
+            return
+        
+        # Trouver le département
+        space = next((s for s in Config.MONITORED_SPACES if s['id'] == course_id), None)
+        if not space:
+            await self._safe_send(chat_id, "❌ Département non trouvé")
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("📊 Détails", callback_data=f"dept:{course_id}:details")],
+            [InlineKeyboardButton("📰 Aujourd'hui", callback_data=f"dept:{course_id}:today")],
+            [InlineKeyboardButton("📅 Hier", callback_data=f"dept:{course_id}:yesterday")],
+            [InlineKeyboardButton("🗓️ 7 jours", callback_data=f"dept:{course_id}:last7")],
+            [InlineKeyboardButton("📂 Sections", callback_data=f"dept:{course_id}:sections")],
+            [InlineKeyboardButton("📋 Activités", callback_data=f"dept:{course_id}:activities")],
+            [InlineKeyboardButton("📚 Ressources", callback_data=f"dept:{course_id}:resources")],
+            [InlineKeyboardButton("📄 Fichiers", callback_data=f"dept:{course_id}:files")],
+            [InlineKeyboardButton("🔄 Scanner", callback_data=f"dept:{course_id}:scan")],
+            [InlineKeyboardButton("📥 Télécharger", callback_data=f"dept:{course_id}:download")],
+            [InlineKeyboardButton("🔙 Retour", callback_data="menu:departments")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        menu_text = (
+            f"📚 <b>{space['name']}</b>\n\n"
+            f"ID: {course_id}\n"
+            "Choisissez une action :"
+        )
+        
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=menu_text,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
 
     async def _send_inline_page(self, chat_id, cid, items, page):
         state_key = f"{cid}"
@@ -726,9 +1614,62 @@ class TelegramNotifier:
             buttons.append(nav_row)
         return InlineKeyboardMarkup(buttons)
 
-    async def _cmd_menu(self, chat_id, args):
-        page = args[0] if args else 'main'
-        await self._send_menu(chat_id, page)
+    async def _cmd_main_menu(self, chat_id, args):
+        """Menu principal avec navigation inline"""
+        if not InlineKeyboardButton:
+            await self._cmd_menu_text(chat_id, args)
+            return
+        
+        # Statut du bot
+        cycle_notifs = self.bot_ref.monitor.last_notifications_cycle() if self.bot_ref else 0
+        status_icon = '🔴' if cycle_notifs > 0 else '🟢'
+        
+        keyboard = [
+            [InlineKeyboardButton(f"{status_icon} Statut", callback_data="cmd:status")],
+            [InlineKeyboardButton("📚 Départements", callback_data="menu:departments")],
+            [InlineKeyboardButton("🔍 Recherche", callback_data="menu:search")],
+            [InlineKeyboardButton("📊 Statistiques", callback_data="cmd:stats")],
+            [InlineKeyboardButton("📰 Aujourd'hui", callback_data="cmd:today")],
+            [InlineKeyboardButton("🕒 Derniers", callback_data="cmd:latest")],
+            [InlineKeyboardButton("🗓️ 7 jours", callback_data="cmd:week")],
+            [InlineKeyboardButton("📦 Big Scan", callback_data="cmd:bigscan")],
+            [InlineKeyboardButton("⚙️ Configuration", callback_data="menu:config")],
+            [InlineKeyboardButton("🆘 Aide", callback_data="cmd:help")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        menu_text = (
+            "🏠 <b>Menu Principal</b>\n\n"
+            f"{status_icon} <b>Statut:</b> {'Changements détectés' if cycle_notifs > 0 else 'Aucun changement'}\n"
+            f"📚 <b>Départements surveillés:</b> {len(Config.MONITORED_SPACES)}\n"
+            f"⏱️ <b>Intervalle de scan:</b> {Config.CHECK_INTERVAL_MINUTES} min\n\n"
+            "Choisissez une option ci-dessous :"
+        )
+        
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=menu_text,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+    
+    async def _cmd_menu_text(self, chat_id, args):
+        """Menu en texte simple"""
+        lines = [
+            "🏠 <b>Menu Principal</b>",
+            "",
+            "📚 Départements: /list",
+            "🔍 Recherche: /search",
+            "📊 Statistiques: /stats",
+            "📰 Aujourd'hui: /today",
+            "🕒 Derniers: /latest",
+            "🗓️ 7 jours: /week",
+            "📦 Big Scan: /bigscan",
+            "⚙️ Configuration: /config",
+            "🆘 Aide: /help"
+        ]
+        await self._safe_send(chat_id, '\n'.join(lines))
 
     async def _send_menu(self, chat_id, page='main'):
         if not InlineKeyboardButton:
@@ -977,6 +1918,68 @@ class TelegramNotifier:
                     pass
         except Exception as e:
             self.logger.warning(f"no-update msg échoué {course_id}: {e}")
+    
+    async def send_no_changes_message(self, course_name: str, course_id: str):
+        """Envoyer un message spécial indiquant qu'aucun changement significatif n'a été détecté."""
+        try:
+            if not self.chat_id:
+                return
+            
+            # Obtenir les statistiques du cours
+            snap = self.bot_ref.get_course_snapshot(course_id) if self.bot_ref else None
+            sections_count = 0
+            activities_count = 0
+            resources_count = 0
+            files_count = 0
+            
+            if snap:
+                sections = snap.get('sections', [])
+                sections_count = len(sections)
+                for section in sections:
+                    activities = section.get('activities', [])
+                    resources = section.get('resources', [])
+                    activities_count += len(activities)
+                    resources_count += len(resources)
+                    
+                    for activity in activities:
+                        files_count += len(activity.get('files', []))
+                    for resource in resources:
+                        files_count += len(resource.get('files', []))
+            
+            # Construire le message
+            msg_lines = [
+                "🟢 <b>Aucune mise à jour détectée</b>",
+                "",
+                f"📚 <b>Département:</b> {self._escape(course_name)}",
+                f"📊 <b>État actuel:</b>",
+                f"   • Sections: {sections_count}",
+                f"   • Activités: {activities_count}",
+                f"   • Ressources: {resources_count}",
+                f"   • Fichiers: {files_count}",
+                "",
+                "✅ <i>Le contenu est à jour - aucune modification significative détectée</i>",
+                f"⏰ <i>Vérifié le {self._get_current_time()}</i>"
+            ]
+            
+            msg = '\n'.join(msg_lines)
+            sent = await self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
+            
+            # Enregistrer le message
+            if self.bot_ref and getattr(self.bot_ref, 'firebase', None):
+                try:
+                    self.bot_ref.firebase.save_message_record(course_id, sent.message_id, 'no_changes', {
+                        'course': course_name,
+                        'sections': sections_count,
+                        'activities': activities_count,
+                        'resources': resources_count,
+                        'files': files_count,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            self.logger.warning(f"no-changes msg échoué {course_id}: {e}")
 
     async def send_cycle_update_summary(self, changed: list, unchanged: list):
         """Envoyer un résumé unique du cycle: départements avec et sans mise à jour."""

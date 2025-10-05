@@ -42,6 +42,8 @@ class Config:
     INITIAL_SCAN_DETAIL_LEVEL = os.getenv('INITIAL_SCAN_DETAIL_LEVEL', 'full')
     # Envoyer un message "pas de mise à jour" quand aucun changement détecté sur un cycle
     SEND_NO_UPDATES_MESSAGE = os.getenv('SEND_NO_UPDATES_MESSAGE', 'true').lower() == 'true'
+    # Envoyer un message détaillé "aucune mise à jour" pour chaque département sans changement
+    SEND_NO_CHANGES_DETAILED_MESSAGE = os.getenv('SEND_NO_CHANGES_DETAILED_MESSAGE', 'true').lower() == 'true'
     # Fournisseur base de données: 'firebase' (par défaut) ou 'supabase' (futur)
     DB_PROVIDER = os.getenv('DB_PROVIDER', 'firebase').lower()
     COURSE_VERSIONING = os.getenv('COURSE_VERSIONING', 'true').lower() == 'true'

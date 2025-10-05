@@ -262,9 +262,14 @@ class ELearningBot:
                     self.logger.info(f"Changements détectés pour {course_name}: {len(changes)} changements")
             else:
                 # Aucun changement détecté
-                if not is_initial_scan and Config.SEND_NO_UPDATES_MESSAGE:
-                    # Accumuler pour résumé global de cycle
-                    self.no_update_courses_cycle.append((course_id, course_name))
+                if not is_initial_scan:
+                    # Envoyer un message spécial pour indiquer qu'il n'y a pas de changements
+                    if Config.SEND_NO_CHANGES_DETAILED_MESSAGE:
+                        await self.notifier.send_no_changes_message(course_name, course_id)
+                    
+                    if Config.SEND_NO_UPDATES_MESSAGE:
+                        # Accumuler pour résumé global de cycle
+                        self.no_update_courses_cycle.append((course_id, course_name))
             if changes and not is_initial_scan and Config.SEND_NO_UPDATES_MESSAGE:
                 self.changed_courses_cycle.append((course_id, course_name))
             
