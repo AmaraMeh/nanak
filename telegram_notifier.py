@@ -223,13 +223,13 @@ class TelegramNotifier:
             '/5': lambda chat_id, args: self._cmd_today(chat_id, []),
             '/6': lambda chat_id, args: self._cmd_week(chat_id, []),
             '/7': lambda chat_id, args: self._cmd_bigscan(chat_id, []),
-            '/8': lambda chat_id, args: self._cmd_config(chat_id, []),
+            '/8': lambda chat_id, args: self._cmd_config_menu(chat_id, []),
             '/9': lambda chat_id, args: self._cmd_help(chat_id, []),
             '/0': lambda chat_id, args: self._cmd_about(chat_id, []),
             
             # Raccourcis alphabétiques
             '/a': self._cmd_about,
-            '/c': self._cmd_config,
+            '/c': self._cmd_config_menu,
             '/d': self._cmd_departments_menu,
             '/e': self._cmd_export_menu,
             '/g': self._cmd_global_stats,
