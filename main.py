@@ -306,7 +306,8 @@ class ELearningBot:
     
     async def start(self):
         """Démarrer le bot"""
-        self.logger.info("Démarrage du bot eLearning Notifier")
+        self.logger.info("🚀 Démarrage du bot eLearning Notifier")
+        self.logger.info("📱 Bot prêt à recevoir des commandes Telegram")
         self.running = True
         
         # Envoyer le message de démarrage
@@ -317,15 +318,12 @@ class ELearningBot:
             lambda: asyncio.create_task(self.check_all_courses())
         )
 
-        # Déterminer si c'est le tout premier run (aucun snapshot persistant)
+        # Vérifier si c'est le tout premier run (aucun snapshot persistant)
         first_run = not any(self.firebase.get_course_content(space['id']) for space in Config.MONITORED_SPACES)
         if first_run:
-            self.logger.info("🟢 Aucune donnée trouvée: exécution du BIG SCAN initial")
-            self.force_full_initial = True
-            # Activer téléchargement des fichiers seulement pendant ce big scan initial
-            self.scraper.enable_file_download = Config.SEND_FILES_AS_DOCUMENTS
-            await self.check_all_courses(is_initial_scan=True)
-            # Après big scan initial: désactiver téléchargement automatique
+            self.logger.info("🟢 Aucune donnée trouvée: le bot attend la commande /first pour lancer le premier scan")
+            # Ne pas lancer automatiquement le premier scan
+            # L'utilisateur doit utiliser /first pour lancer l'inventaire initial
             self.scraper.enable_file_download = False
         else:
             # Baseline silencieuse pour préparer les diffs sans spammer

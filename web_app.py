@@ -18,10 +18,11 @@ logging.basicConfig(level=logging.INFO)
 async def startup_event():
     global bot_instance, bot_task
     if bot_instance is None:
+        logger.info("🚀 Démarrage du bot eLearning...")
         bot_instance = ELearningBot()
         # Lancer le bot en tâche asynchrone
         bot_task = asyncio.create_task(bot_instance.start())
-        logger.info("Bot async task démarrée")
+        logger.info("✅ Bot async task démarrée - Prêt à recevoir des commandes")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -39,9 +40,22 @@ async def shutdown_event():
 @app.get("/health")
 async def health():
     if not bot_instance:
-        return JSONResponse({"status": "starting"}, status_code=503)
-    stats = bot_instance.monitor.get_summary_stats()
-    return {"status": "ok", "scans": stats.get("total_scans"), "notifications": stats.get("total_notifications")}
+        return JSONResponse({"status": "starting", "message": "Bot instance not yet created"}, status_code=503)
+    
+    if not bot_instance.running:
+        return JSONResponse({"status": "stopped", "message": "Bot is not running"}, status_code=503)
+    
+    try:
+        stats = bot_instance.monitor.get_summary_stats()
+        return {
+            "status": "ok", 
+            "message": "Bot is running and ready",
+            "scans": stats.get("total_scans", 0), 
+            "notifications": stats.get("total_notifications", 0),
+            "initial_scan_completed": bot_instance.initial_scan_completed_at is not None
+        }
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"Health check failed: {str(e)}"}, status_code=503)
 
 @app.get("/stats")
 async def stats():
