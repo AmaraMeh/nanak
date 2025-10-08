@@ -1104,6 +1104,32 @@ class TelegramNotifier:
         """Vérifier le système"""
         await self._cmd_health_check(chat_id, args)
     
+    # === COMMANDES DE CONFIGURATION ET MENUS MANQUANTS ===
+    async def _cmd_config(self, chat_id, args):
+        """Afficher le menu/configuration (alias pratique)"""
+        # Utilise le menu si disponible, sinon texte simple
+        await self._cmd_config_menu(chat_id, args)
+
+    async def _cmd_export_menu(self, chat_id, args):
+        """Menu d'export (aide)"""
+        help_text = (
+            "📦 <b>Export</b>\n\n"
+            "Utilisation: <code>/export &lt;course_id&gt;</code>\n"
+            "Exemple: <code>/export 19984</code>\n\n"
+            "Astuce: tapez <code>/list</code> pour voir les IDs disponibles."
+        )
+        await self._safe_send(chat_id, help_text)
+
+    async def _cmd_inventory_menu(self, chat_id, args):
+        """Menu d'inventaire (aide)"""
+        help_text = (
+            "🧭 <b>Inventaire</b>\n\n"
+            "Utilisation: <code>/inventory &lt;course_id&gt;</code>\n"
+            "Exemple: <code>/inventory 19984</code>\n\n"
+            "Astuce: tapez <code>/list</code> pour voir les IDs disponibles."
+        )
+        await self._safe_send(chat_id, help_text)
+
     # === COMMANDES MANQUANTES ===
     
     async def _cmd_month(self, chat_id, args):
